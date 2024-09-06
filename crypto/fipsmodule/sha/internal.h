@@ -20,6 +20,70 @@
 #include "../../internal.h"
 #include "../cpucap/internal.h"
 
+
+#ifndef EXPERIMENTAL_AWS_LC_KECCAK
+#define EXPERIMENTAL_AWS_LC_KECCAK
+#endif
+
+// Design I transfers the minimum necessary changes staying in compliance with OSSL implementation
+// Add: SHA3_Squeeze incremental API (added API args: int first/next)
+// Introduce assembly changes SHA3_Squeeze incremental
+// Remove: SHA3_Squeeze non-incremental API (use the incremental API in a single shot fashion)
+// Diverge (from OSSL): Remove xof_state field in KECCAK1600_CTX structure (not necessary relevant to ML-KEM changes)
+// Change: replace struct keccak_state with KECCAK1600_CTX state in the internal use of symmetric.h
+// Ref: QUIP doc here
+#ifndef EXPERIMENTAL_AWS_LC_KECCAK_DESIGN_I
+#define EXPERIMENTAL_AWS_LC_KECCAK_DESIGN_I
+#endif
+
+// Design II transfers the minimum necessary changes diverging the internal incremental SHA3_Squeeze API from OSSL implementation
+// Add: SHA3_Squeeze incremental API (replace API args: uint64_t A[SHA3_ROWS][SHA3_ROWS] with KECCAK1600_CTX *ctx)
+// Additional changes in the assembly code are required (diverging from OSSL)
+// Diverge (from OSSL): Add field to struct KECCAK1600_CTX: int first/next (diverging from OSSL)
+// Cons: Only C design could be merged into AWS-LC on time (09/30/24)
+// Remove: SHA3_Squeeze non-incremental API (use the incremental API in a single shot fashion)
+// Change: replace struct keccak_state with KECCAK1600_CTX state in the internal use of symmetric.h
+// Diverge (from OSSL): Remove xof_state field in KECCAK1600_CTX structure (not necessary relevant to ML-KEM changes)
+// Ref: QUIP doc here
+#ifndef EXPERIMENTAL_AWS_LC_KECCAK_DESIGN_II
+#undef EXPERIMENTAL_AWS_LC_KECCAK_DESIGN_II
+#endif
+
+// Design III transfers the all changes from internal incremental SHA3_Squeeze API from OSSL implementation
+// Add: SHA3_Squeeze incremental API (added API args: int first/next)
+// Add: Assembly changes from OSSL design
+// Add: Add field to struct KECCAK1600_CTX: int xof_state to perform additional checks on Absorb/Squeeze sequence of execution
+// Keep: SHA3_Squeeze non-incremental API
+// Change: replace struct keccak_state with KECCAK1600_CTX state in the internal use of symmetric.h
+// Ref: QUIP doc here
+#ifndef EXPERIMENTAL_AWS_LC_KECCAK_DESIGN_III
+#undef EXPERIMENTAL_AWS_LC_KECCAK_DESIGN_III
+#endif
+
+// Design IV keeps the previous design in symmetric.h for ML-KEM specific use of FIPS202
+// Change: Replace Keccak1600 function calls with AWS-LC internal Keccak1600 implementation
+// Keep: Padding and absorb last block (needed for Incremental SHA3_Squeeze) are implemented (additionally) in symmetric.h
+// Pros: No AWS-LC SHA3 code changes are added
+// Pros: Code could be reused by other PQ algorithms from higher level symmetric.h
+// Cons: SHA3_Squeeze non-incremental API only (SHAKE general functionality allows incremental Squeeze)
+// Ref: QUIP doc here
+#ifndef EXPERIMENTAL_AWS_LC_KECCAK_DESIGN_IV
+#undef EXPERIMENTAL_AWS_LC_KECCAK_DESIGN_IV
+#endif
+
+// Design V import all changes from OpenSSL
+// Keep: Current SHA3_Squeeze non-incremental API (added API args: int first/next)
+// Add: OpenSSL SHA3_Squeeze incremental API (added API args: int first/next)
+// Remove: Entire list of symmetric.h functions
+// Pros: No AWS-LC SHA3 code changes are added
+// Pros: Code could be reused by other PQ algorithms from higher level symmetric.h
+// Cons: SHA3_Squeeze non-incremental API only (SHAKE general functionality allows incremental Squeeze)
+// Ref: QUIP doc here
+#ifndef EXPERIMENTAL_AWS_LC_KECCAK_DESIGN_V
+#undef EXPERIMENTAL_AWS_LC_KECCAK_DESIGN_V
+#endif
+
+
 #if defined(__cplusplus)
 extern "C" {
 #endif
@@ -40,6 +104,7 @@ extern "C" {
 // SHA3 constants, from NIST FIPS202.
 // https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.202.pdf
 #define SHA3_ROWS 5
+#define SHA3_WORDS 25
 #define KECCAK1600_WIDTH 1600
 
 #define SHA3_224_CAPACITY_BYTES 56
@@ -81,6 +146,7 @@ struct keccak_st {
   size_t buf_load;                                 // used bytes in below buffer
   uint8_t buf[SHA3_MAX_BLOCKSIZE];                 // should have at least the max data block size bytes
   uint8_t pad;
+  uint8_t padded;                                   // replace 
 };
 // Define SHA{n}[_{variant}]_ASM if sha{n}_block_data_order[_{variant}] is
 // defined in assembly.
@@ -233,7 +299,7 @@ void sha512_block_data_order_nohw(uint64_t *state, const uint8_t *data,
 #endif
 
 #if !defined(OPENSSL_NO_ASM) && defined(OPENSSL_AARCH64)
-#define KECCAK1600_ASM
+//#define KECCAK1600_ASM
 #endif
 
 // SHAx_Init_from_state is a low-level function that initializes |sha| with a
@@ -347,9 +413,13 @@ OPENSSL_EXPORT int SHA3_Final(uint8_t *md, KECCAK1600_CTX *ctx);
 OPENSSL_EXPORT size_t SHA3_Absorb(uint64_t A[SHA3_ROWS][SHA3_ROWS],
                                   const uint8_t *data, size_t len, size_t r);
 
+#if defined(EXPERIMENTAL_AWS_LC_KECCAK) && defined(EXPERIMENTAL_AWS_LC_KECCAK_DESIGN_I)
 // SHA3_Squeeze generate |out| hash value of |len| bytes.
 OPENSSL_EXPORT void SHA3_Squeeze(uint64_t A[SHA3_ROWS][SHA3_ROWS],
-                                 uint8_t *out, size_t len, size_t r);
+                                 uint8_t *out, size_t len, size_t r, int first);
+#endif
+
+OPENSSL_EXPORT void KeccakF1600(uint64_t A[SHA3_ROWS][SHA3_ROWS]);
 
 #if defined(__cplusplus)
 }  // extern "C"

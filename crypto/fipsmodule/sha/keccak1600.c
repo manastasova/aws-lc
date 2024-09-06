@@ -9,6 +9,9 @@
 
 #include <assert.h>
 
+// Only for macros:: TODO:: Delete after we agree on a design
+#include "internal.h" 
+
 #if defined(__x86_64__) || defined(__aarch64__) || \
     defined(__mips64) || defined(__ia64) || defined(__loongarch_lp64) || \
     (defined(__VMS) && !defined(__vax))
@@ -222,7 +225,7 @@ static void Round(uint64_t R[SHA3_ROWS][SHA3_ROWS], uint64_t A[SHA3_ROWS][SHA3_R
 #endif
 }
 
-static void KeccakF1600(uint64_t A[SHA3_ROWS][SHA3_ROWS])
+void KeccakF1600(uint64_t A[SHA3_ROWS][SHA3_ROWS])
 {
     uint64_t T[SHA3_ROWS][SHA3_ROWS];
     size_t i;
@@ -318,7 +321,7 @@ static uint64_t BitDeinterleave(uint64_t Ai)
         hi |= hi >> 1;  hi &= 0xaaaaaaaa;
 
         Ai = ((uint64_t)(hi | lo) << 32) | (t1 | t0);
-    }
+     }
 
     return Ai;
 }
@@ -356,9 +359,13 @@ size_t SHA3_Absorb(uint64_t A[SHA3_ROWS][SHA3_ROWS], const uint8_t *inp, size_t 
     return len;
 }
 
+#if defined(EXPERIMENTAL_AWS_LC_KECCAK) && defined(EXPERIMENTAL_AWS_LC_KECCAK_DESIGN_I)
+// NOTE: Add argument first to specify if the function is called for the first time or not (opposite to OSSL) (IMO more readable)
+ // Could reverse it and make it next
+
  // SHA3_Squeeze is called once at the end to generate |out| hash value
  // of |len| bytes.
-void SHA3_Squeeze(uint64_t A[SHA3_ROWS][SHA3_ROWS], uint8_t *out, size_t len, size_t r)
+void SHA3_Squeeze(uint64_t A[SHA3_ROWS][SHA3_ROWS], uint8_t *out, size_t len, size_t r, int first)
 {
     uint64_t *A_flat = (uint64_t *)A;
     size_t i, w = r / 8;
@@ -366,6 +373,10 @@ void SHA3_Squeeze(uint64_t A[SHA3_ROWS][SHA3_ROWS], uint8_t *out, size_t len, si
     assert(r < (25 * sizeof(A[0][0])) && (r % 8) == 0);
 
     while (len != 0) {
+        if (first == 0) {
+            KeccakF1600(A); 
+        }
+        first = 0;
         for (i = 0; i < w && len != 0; i++) {
             uint64_t Ai = BitDeinterleave(A_flat[i]);
 
@@ -388,13 +399,57 @@ void SHA3_Squeeze(uint64_t A[SHA3_ROWS][SHA3_ROWS], uint8_t *out, size_t len, si
             out += 8;
             len -= 8;
         }
-        if (len != 0) {
-            KeccakF1600(A);
+    }
+}
+#endif
+
+
+#if 0
+ // SHA3_Squeeze is called once at the end to generate |out| hash value
+ // of |len| bytes.
+void SHA3_Squeeze(KECCAK1600_CTX *ctx, uint8_t *out, size_t len, size_t r)
+{
+    uint64_t *A_flat = (uint64_t *)ctx->A;
+    size_t i, w = r / 8;
+
+    assert(r < (25 * sizeof(A[0][0])) && (r % 8) == 0);
+
+    while (len != 0) {
+        //#ifdef EXPERIMENTAL_AWS_LC_KECCAK
+        if(!ctx->xof_state){
+            ctx->xof_state = 1;
+        } else {
+            KeccakF1600(ctx->A); 
+        }
+        //#endif
+        for (i = 0; i < w && len != 0; i++) {
+            uint64_t Ai = BitDeinterleave(A_flat[i]);
+
+            if (len < 8) {
+                for (i = 0; i < len; i++) {
+                    *out++ = (uint8_t)Ai;
+                    Ai >>= 8;
+                }
+                return;
+            }
+
+            out[0] = (uint8_t)(Ai);
+            out[1] = (uint8_t)(Ai >> 8);
+            out[2] = (uint8_t)(Ai >> 16);
+            out[3] = (uint8_t)(Ai >> 24);
+            out[4] = (uint8_t)(Ai >> 32);
+            out[5] = (uint8_t)(Ai >> 40);
+            out[6] = (uint8_t)(Ai >> 48);
+            out[7] = (uint8_t)(Ai >> 56);
+            out += 8;
+            len -= 8;
         }
     }
 }
-
+#endif
 #else
+
+void KeccakF1600(uint64_t A[SHA3_ROWS][SHA3_ROWS]);
 
 size_t SHA3_Absorb_hw(uint64_t A[SHA3_ROWS][SHA3_ROWS], const uint8_t *inp, size_t len,
                        size_t r);
