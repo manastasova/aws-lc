@@ -147,17 +147,6 @@ static unsigned int rej_uniform(int16_t *r,
 
 #define gen_a(PARAMS,A,B)  gen_matrix(PARAMS,A,B,0)
 #define gen_at(PARAMS,A,B) gen_matrix(PARAMS,A,B,1)
-
-void print_the_buffer(uint8_t buf[506], int buf_len);
-void print_the_buffer(uint8_t buf[506], int buf_len){
-  printf("BUFFER: \n");
-  for (int i = 0; i < buf_len; i++)
-  {
-    printf("%d ", buf[i]);
-  }
-   printf("END: \n");
-  
-}
 /*************************************************
 * Name:        gen_matrix
 *
@@ -177,14 +166,8 @@ void gen_matrix(ml_kem_params *params, polyvec *a, const uint8_t seed[KYBER_SYMB
   unsigned int ctr, i, j, k;
   unsigned int buflen, off;
   uint8_t buf[GEN_MATRIX_NBLOCKS*XOF_BLOCKBYTES+2];
-  #ifdef EXPERIMENTAL_AWS_LC_KECCAK_DESIGN_I
   KECCAK1600_CTX ctx;
-  #else
-  xof_state state;
-  #endif
-
-  int counter = 0;
-
+ 
   for(i=0;i<params->k;i++) {
     for(j=0;j<params->k;j++) {
       if(transposed)
@@ -196,13 +179,10 @@ void gen_matrix(ml_kem_params *params, polyvec *a, const uint8_t seed[KYBER_SYMB
       buflen = GEN_MATRIX_NBLOCKS*XOF_BLOCKBYTES;
       ctr = rej_uniform(a[i].vec[j].coeffs, KYBER_N, buf, buflen);
 
-      
-      //print_the_buffer(buf, buflen);
       while(ctr < KYBER_N) {
         off = buflen % 3;
-        for (k = 0; k < off; k++) {
+        for (k = 0; k < off; k++)
           buf[k] = buf[buflen - off + k];
-        }
         xof_squeezeblocks(buf + off, 1, &ctx);
         buflen = off + XOF_BLOCKBYTES;
         ctr += rej_uniform(a[i].vec[j].coeffs + ctr, KYBER_N - ctr, buf, buflen);
