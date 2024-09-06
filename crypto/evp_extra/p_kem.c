@@ -8,7 +8,7 @@
 
 #include "../fipsmodule/evp/internal.h"
 #include "../fipsmodule/delocate.h"
-#include "../kem/internal.h"
+#include "../fipsmodule/kem/internal.h"
 #include "../internal.h"
 #include "internal.h"
 
@@ -359,10 +359,7 @@ static int EVP_PKEY_kem_set_params(EVP_PKEY *pkey, int nid) {
     return 0;
   }
 
-  if (!EVP_PKEY_set_type(pkey, EVP_PKEY_KEM)) {
-    // EVP_PKEY_set_type sets the appropriate error.
-    return 0;
-  }
+  evp_pkey_set_method(pkey, &kem_asn1_meth);
 
   KEM_KEY *key = KEM_KEY_new();
   if (key == NULL) {

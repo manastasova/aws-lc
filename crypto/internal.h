@@ -206,10 +206,18 @@ typedef __uint128_t uint128_t;
 #define OPENSSL_SSE2
 #endif
 
-// For convenience in testing 64-bit generic code, we allow disabling SSE2
-// intrinsics via |OPENSSL_NO_SSE2_FOR_TESTING|. x86_64 always has SSE2
-// available, so we would otherwise need to test such code on a non-x86_64
-// platform.
+#if defined(OPENSSL_X86) && !defined(OPENSSL_NO_ASM) && !defined(OPENSSL_SSE2)
+#error \
+    "x86 assembly requires SSE2. Build with -msse2 (recommended), or disable assembly optimizations with -DOPENSSL_NO_ASM."
+#endif
+
+// For convenience in testing the fallback code, we allow disabling SSE2
+// intrinsics via |OPENSSL_NO_SSE2_FOR_TESTING|. We require SSE2 on x86 and
+// x86_64, so we would otherwise need to test such code on a non-x86 platform.
+//
+// This does not remove the above requirement for SSE2 support with assembly
+// optimizations. It only disables some intrinsics-based optimizations so that
+// we can test the fallback code on CI.
 #if defined(OPENSSL_SSE2) && defined(OPENSSL_NO_SSE2_FOR_TESTING)
 #undef OPENSSL_SSE2
 #endif
@@ -572,7 +580,8 @@ OPENSSL_EXPORT void CRYPTO_once(CRYPTO_once_t *once, void (*init)(void));
 
 // Reference counting.
 
-#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#if !defined(__STDC_NO_ATOMICS__) && defined(__STDC_VERSION__) && \
+    __STDC_VERSION__ >= 201112L
 #include <stdatomic.h>
 // CRYPTO_refcount_t is a |uint32_t|
 #define AWS_LC_ATOMIC_LOCK_FREE ATOMIC_LONG_LOCK_FREE
@@ -581,9 +590,8 @@ OPENSSL_EXPORT void CRYPTO_once(CRYPTO_once_t *once, void (*init)(void));
 #endif
 
 // Automatically enable C11 atomics if implemented and lock free
-#if !defined(OPENSSL_C11_ATOMIC) && defined(OPENSSL_THREADS) &&   \
-    !defined(__STDC_NO_ATOMICS__) && defined(__STDC_VERSION__) && \
-    __STDC_VERSION__ >= 201112L && AWS_LC_ATOMIC_LOCK_FREE == 2
+#if !defined(OPENSSL_C11_ATOMIC) && defined(OPENSSL_THREADS) && \
+    AWS_LC_ATOMIC_LOCK_FREE == 2
 #define OPENSSL_C11_ATOMIC
 #endif
 

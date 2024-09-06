@@ -14,7 +14,7 @@ uint8_t *SHA3_224(const uint8_t *data, size_t len,
                   uint8_t out[SHA3_224_DIGEST_LENGTH]) {
   FIPS_service_indicator_lock_state();
   KECCAK1600_CTX ctx;
-  int ok = (SHA3_Init(&ctx, SHA3_PAD_CHAR, SHA3_224_DIGEST_BITLENGTH) && 
+  int ok = (SHA3_Init(&ctx, SHA3_PAD_CHAR, SHA3_224_DIGEST_BITLENGTH) &&
             SHA3_Update(&ctx, data, len) &&
             SHA3_Final(out, &ctx));
 
@@ -31,7 +31,7 @@ uint8_t *SHA3_256(const uint8_t *data, size_t len,
                   uint8_t out[SHA3_256_DIGEST_LENGTH]) {
   FIPS_service_indicator_lock_state();
   KECCAK1600_CTX ctx;
-  int ok = (SHA3_Init(&ctx, SHA3_PAD_CHAR, SHA3_256_DIGEST_BITLENGTH) && 
+  int ok = (SHA3_Init(&ctx, SHA3_PAD_CHAR, SHA3_256_DIGEST_BITLENGTH) &&
             SHA3_Update(&ctx, data, len) &&
             SHA3_Final(out, &ctx));
 
@@ -48,7 +48,7 @@ uint8_t *SHA3_384(const uint8_t *data, size_t len,
                   uint8_t out[SHA3_384_DIGEST_LENGTH]) {
   FIPS_service_indicator_lock_state();
   KECCAK1600_CTX ctx;
-  int ok = (SHA3_Init(&ctx, SHA3_PAD_CHAR, SHA3_384_DIGEST_BITLENGTH) && 
+  int ok = (SHA3_Init(&ctx, SHA3_PAD_CHAR, SHA3_384_DIGEST_BITLENGTH) &&
             SHA3_Update(&ctx, data, len) &&
             SHA3_Final(out, &ctx));
 
@@ -65,7 +65,7 @@ uint8_t *SHA3_512(const uint8_t *data, size_t len,
                   uint8_t out[SHA3_512_DIGEST_LENGTH]) {
   FIPS_service_indicator_lock_state();
   KECCAK1600_CTX ctx;
-  int ok = (SHA3_Init(&ctx, SHA3_PAD_CHAR, SHA3_512_DIGEST_BITLENGTH) && 
+  int ok = (SHA3_Init(&ctx, SHA3_PAD_CHAR, SHA3_512_DIGEST_BITLENGTH) &&
             SHA3_Update(&ctx, data, len) &&
             SHA3_Final(out, &ctx));
 
@@ -167,7 +167,7 @@ int SHA3_Update(KECCAK1600_CTX *ctx, const void *data, size_t len) {
 
   // Process intermediate buffer.
   num = ctx->buf_load;
-  if (num != 0) { 
+  if (num != 0) {
     rem = block_size - num;
     if (len < rem) {
       memcpy(ctx->buf + num, data_ptr_copy, len);

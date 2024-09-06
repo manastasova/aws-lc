@@ -174,14 +174,18 @@ static int is_md_fips_approved_for_signing(int md_type, int pkey_type) {
     case NID_sha256:
     case NID_sha384:
     case NID_sha512:
-      return 1;
     case NID_sha512_224:
     case NID_sha512_256:
-      // Truncated SHA512 is only approved for signing with RSA PSS
-      if (pkey_type == EVP_PKEY_RSA_PSS) {
-        return 1;
-      }
-      return 0;
+    case NID_sha3_224:
+    case NID_sha3_256:
+    case NID_sha3_384:
+    case NID_sha3_512:
+      return 1;
+
+      // [TODO] SHAKE is only approved for signing with RSA PSS
+      // if (pkey_type == EVP_PKEY_RSA_PSS) // This will be needed when SHAKE is added
+      //  return 1;
+      //}
     default:
       return 0;
   }
@@ -196,14 +200,18 @@ static int is_md_fips_approved_for_verifying(int md_type, int pkey_type) {
     case NID_sha256:
     case NID_sha384:
     case NID_sha512:
-      return 1;
     case NID_sha512_224:
     case NID_sha512_256:
-      // Truncated SHA512 is only approved for verifying with RSA PSS
-      if (pkey_type == EVP_PKEY_RSA_PSS) {
-        return 1;
-      }
-      return 0;
+    case NID_sha3_224:
+    case NID_sha3_256:
+    case NID_sha3_384:
+    case NID_sha3_512:
+      return 1;
+
+      // [TODO] SHAKE is only approved for signing with RSA PSS
+      // if (pkey_type == EVP_PKEY_RSA_PSS) // This will be needed when SHAKE is added
+      //  return 1;
+      //}
     default:
       return 0;
   }
@@ -479,6 +487,60 @@ void TLSKDF_verify_service_indicator(const EVP_MD *dgst, const char *label,
                  TLS_MD_EXTENDED_MASTER_SECRET_CONST_SIZE) == 0) {
         FIPS_service_indicator_update_state();
       }
+      break;
+    default:
+      break;
+  }
+}
+
+// "Whenever a hash function is employed (including as the primitive used by HMAC), an
+// approved hash function shall be used. FIPS 180 and FIPS 202 specify approved hash
+// functions"
+//
+// * FIPS 180 covers the SHA-1 and SHA-2* family of algorithms
+// * FIPS 202 covers the SHA3-* family of algorithms
+//
+// Sourced from NIST.SP.800-56Cr2 Section 7: Selecting Hash Functions and MAC Algorithms
+// https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-56Cr2.pdf
+void SSKDF_digest_verify_service_indicator(const EVP_MD *dgst) {
+  switch (dgst->type) {
+    case NID_sha1:
+    case NID_sha224:
+    case NID_sha256:
+    case NID_sha384:
+    case NID_sha512:
+    case NID_sha512_224:
+    case NID_sha512_256:
+    case NID_sha3_224:
+    case NID_sha3_256:
+    case NID_sha3_384:
+    case NID_sha3_512:
+      FIPS_service_indicator_update_state();
+      break;
+    default:
+      break;
+  }
+}
+
+// "Whenever a hash function is employed (including as the primitive used by HMAC), an
+// approved hash function shall be used. FIPS 180 and FIPS 202 specify approved hash
+// functions"
+//
+// * FIPS 180 covers the SHA-1 and SHA-2* family of algorithms
+// * FIPS 202 covers the SHA3-* family of algorithms (Note: AWS-LC does not currently support SHA-3 with HMAC)
+//
+// Sourced from NIST.SP.800-56Cr2 Section 7: Selecting Hash Functions and MAC Algorithms
+// https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-56Cr2.pdf
+void SSKDF_hmac_verify_service_indicator(const EVP_MD *dgst) {
+  switch (dgst->type) {
+    case NID_sha1:
+    case NID_sha224:
+    case NID_sha256:
+    case NID_sha384:
+    case NID_sha512:
+    case NID_sha512_224:
+    case NID_sha512_256:
+      FIPS_service_indicator_update_state();
       break;
     default:
       break;

@@ -420,9 +420,10 @@ add_library(
   err_data.c
   engine/engine.c
   evp_extra/evp_asn1.c
+  evp_extra/p_dh.c
+  evp_extra/p_dh_asn1.c
   evp_extra/p_dsa_asn1.c
   evp_extra/p_ec_asn1.c
-  evp_extra/p_ed25519.c
   evp_extra/p_ed25519_asn1.c
   evp_extra/p_hmac_asn1.c
   evp_extra/p_kem.c
