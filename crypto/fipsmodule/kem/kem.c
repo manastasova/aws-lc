@@ -3,14 +3,18 @@
 
 #include <openssl/base.h>
 
-#include "../../kem/internal.h"
+#include "../../kyber/kem_kyber.h"
 #include "../delocate.h"
 #include "../ml_kem/ml_kem.h"
 #include "internal.h"
 
-static const uint8_t kOIDMLKEM512[]  = {0xff, 0xff, 0xff, 0xff};
-static const uint8_t kOIDMLKEM768[]  = {0xff, 0xff, 0xff, 0xff};
-static const uint8_t kOIDMLKEM1024[] = {0xff, 0xff, 0xff, 0xff};
+// https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration
+// 2.16.840.1.101.3.4.4.1
+static const uint8_t kOIDMLKEM512[]  = {0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x04, 0x01};
+// 2.16.840.1.101.3.4.4.2
+static const uint8_t kOIDMLKEM768[]  = {0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x04, 0x02};
+// 2.16.840.1.101.3.4.4.3
+static const uint8_t kOIDMLKEM1024[] = {0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x04, 0x03};
 
 static int ml_kem_1024_keygen_deterministic(uint8_t *public_key,
                                                 uint8_t *secret_key,
@@ -169,7 +173,6 @@ DEFINE_LOCAL_DATA(KEM, KEM_ml_kem_1024) {
 }
 
 const KEM *KEM_find_kem_by_nid(int nid) {
-
   switch (nid) {
     case NID_MLKEM512:
       return KEM_ml_kem_512();
@@ -177,19 +180,16 @@ const KEM *KEM_find_kem_by_nid(int nid) {
       return KEM_ml_kem_768();
     case NID_MLKEM1024:
       return KEM_ml_kem_1024();
+    // Try legacy KEMs.
+    case NID_KYBER512_R3:
+      return get_legacy_kem_kyber512_r3();
+    case NID_KYBER768_R3:
+      return get_legacy_kem_kyber768_r3();
+    case NID_KYBER1024_R3:
+      return get_legacy_kem_kyber1024_r3();
     default:
-      break;
+      return NULL;
   }
-
-  // We couldn't match a known KEM. Try legacy KEMs.
-  const KEM *legacy_kems = get_legacy_kems();
-  for (size_t i = 0; i < AWSLC_NUM_LEGACY_KEMS; i++) {
-    if (legacy_kems[i].nid == nid) {
-      return &legacy_kems[i];
-    }
-  }
-
-  return NULL;
 }
 
 KEM_KEY *KEM_KEY_new(void) {
