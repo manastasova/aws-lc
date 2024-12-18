@@ -15,6 +15,7 @@
 #include <openssl/dh.h>
 #include <openssl/digest.h>
 #include <openssl/ec.h>
+#include <openssl/ecdsa.h>
 #include <openssl/ecdh.h>
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
@@ -34,6 +35,8 @@
 #include "../hmac/internal.h"
 #include "../rand/internal.h"
 #include "../sha/internal.h"
+#include "../rsa/internal.h"
+#include "../ec/internal.h"
 
 static const uint8_t kAESKey[16] = {
     'A','W','S','-','L','C','C','r','y','p','t','o',' ','K', 'e','y'};
@@ -779,7 +782,8 @@ TEST_P(AEADServiceIndicatorTest, EVP_AEAD) {
                           encrypt_output.size(), nonce.data(), nonce.size(),
                           kPlaintext, sizeof(kPlaintext), nullptr, 0)));
     EXPECT_EQ(approved, AWSLC_NOT_APPROVED);
-    EXPECT_EQ(ERR_GET_REASON(ERR_get_error()), CIPHER_R_INVALID_NONCE);
+    EXPECT_TRUE(
+        ErrorEquals(ERR_get_error(), ERR_LIB_CIPHER, CIPHER_R_INVALID_NONCE));
   }
 }
 
@@ -1436,6 +1440,18 @@ const uint8_t kHKDF_okm_tc1_sha512[] = {
     0xfc, 0x7f, 0xe9, 0x2c, 0x14, 0x81, 0x57, 0x93, 0x38, 0xda, 0x36, 0x2c,
     0xb8, 0xd9, 0xf9, 0x25, 0xd7, 0xcb
 };
+const uint8_t kHKDF_okm_tc1_sha512_224[] = {
+    0xf8, 0xd9, 0x56, 0xe1, 0x52, 0xb0, 0xfb, 0xa8, 0x31, 0xba, 0xc4,
+    0x00, 0xf1, 0xa5, 0xaf, 0x54, 0x98, 0x2b, 0x91, 0xdb, 0x3d, 0x96,
+    0xae, 0x21, 0xa7, 0x56, 0x55, 0xef, 0xf1, 0x72, 0x5f, 0x92, 0x8e,
+    0x49, 0x1c, 0x63, 0xf3, 0xae, 0xdb, 0x40, 0x82, 0x96
+};
+const uint8_t kHKDF_okm_tc1_sha512_256[] = {
+    0x78, 0x9a, 0x93, 0xe5, 0x67, 0xa1, 0x86, 0x1d, 0xe4, 0x49, 0x34,
+    0x2b, 0x2d, 0x67, 0x4c, 0x0d, 0xf7, 0x37, 0xfd, 0x8a, 0xdc, 0xe2,
+    0xa8, 0xe1, 0x84, 0x32, 0x37, 0xc1, 0x93, 0x8a, 0xc4, 0x13, 0x04,
+    0x4b, 0x49, 0x6c, 0xe2, 0x67, 0xa1, 0x98, 0xeb, 0xe3
+};
 
 const uint8_t kHKDF_ikm_tc2[] = {   // RFC 5869 Test Case 2
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b,
@@ -1509,6 +1525,18 @@ const uint8_t kHKDF_okm_tc2_sha512[] = {
     0x1e, 0xcf, 0xf2, 0x35, 0xf6, 0xa2, 0x05, 0x6c, 0xe3, 0xaf, 0x1d, 0xe4,
     0x4d, 0x57, 0x20, 0x97, 0xa8, 0x50, 0x5d, 0x9e, 0x7a, 0x93
 };
+const uint8_t kHKDF_okm_tc2_sha512_224[] = {
+    0xb2, 0xfd, 0x77, 0xf9, 0xcf, 0xb6, 0xda, 0x40, 0x10, 0x23, 0x8b,
+    0xa6, 0x21, 0x7a, 0x1b, 0xc7, 0xb7, 0x70, 0xa3, 0x85, 0x28, 0x4b,
+    0x8e, 0x54, 0xd6, 0x8d, 0x40, 0x8c, 0xce, 0x4a, 0x42, 0xc3, 0xc5,
+    0xde, 0x16, 0x91, 0x59, 0x93, 0x1e, 0x13, 0x24, 0x8b
+};
+const uint8_t kHKDF_okm_tc2_sha512_256[] = {
+    0x9f, 0xde, 0x11, 0xa4, 0x63, 0x48, 0xac, 0x1a, 0xba, 0xdf, 0xd2,
+    0xff, 0xb6, 0x0d, 0x85, 0x26, 0x58, 0x3f, 0xc8, 0x3e, 0x08, 0xb8,
+    0x8a, 0x6e, 0xdc, 0x2d, 0xc6, 0x95, 0xad, 0x61, 0x5d, 0xe3, 0xbe,
+    0x8e, 0xd2, 0xe1, 0xfe, 0x5b, 0xc8, 0x38, 0xf7, 0x13
+};
 
 const uint8_t kHKDF_ikm_tc3[] = {   // RFC 5869 Test Case 3
     0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
@@ -1545,6 +1573,18 @@ const uint8_t kHKDF_okm_tc3_sha512[] = {
     0x87, 0x03, 0x47, 0x2c, 0x6e, 0xb1, 0x79, 0xdc, 0x20, 0x4c, 0x03, 0x42,
     0x5c, 0x97, 0x0e, 0x3b, 0x16, 0x4b, 0xf9, 0x0f, 0xff, 0x22, 0xd0, 0x48,
     0x36, 0xd0, 0xe2, 0x34, 0x3b, 0xac
+};
+const uint8_t kHKDF_okm_tc3_sha512_224[] = {
+    0x7c, 0x21, 0xff, 0xc6, 0x05, 0x69, 0x03, 0xdd, 0x09, 0xf1, 0x31,
+    0xd3, 0x36, 0xb4, 0x20, 0x41, 0x5f, 0x17, 0xb0, 0x50, 0x3b, 0xa3,
+    0x23, 0x55, 0xe6, 0x79, 0xaf, 0x0f, 0x6e, 0xb6, 0x44, 0x39, 0x20,
+    0x77, 0x94, 0x40, 0x09, 0x43, 0xb5, 0x3a, 0x17, 0x83
+};
+const uint8_t kHKDF_okm_tc3_sha512_256[] = {
+    0xfa, 0x6f, 0xf4, 0x5b, 0x2f, 0xc4, 0xf0, 0xf4, 0x98, 0x83, 0xd9,
+    0xc4, 0xc9, 0xf9, 0xed, 0xfb, 0x53, 0xce, 0xbb, 0x3f, 0x9f, 0xaa,
+    0xc5, 0x71, 0x31, 0x9c, 0x7b, 0xd1, 0x7d, 0x37, 0x1a, 0x0a, 0xbc,
+    0xa6, 0x5d, 0x85, 0xeb, 0x3d, 0x41, 0x49, 0x51, 0x58
 };
 
 const uint8_t kHKDF_ikm_tc4[] = {   // RFC 5869 Test Case 4
@@ -1586,6 +1626,18 @@ const uint8_t kHKDF_okm_tc4_sha512[] = {
     0xfc, 0xf3, 0x95, 0x4d, 0xc8, 0xaf, 0xf5, 0x35, 0x59, 0xbd, 0x5e, 0x30,
     0x28, 0xb0, 0x80, 0xf7, 0xc0, 0x68
 };
+const uint8_t kHKDF_okm_tc4_sha512_224[] = {
+    0x80, 0x86, 0x34, 0xf8, 0x71, 0x34, 0xbc, 0xb6, 0x9b, 0xfb, 0xd2,
+    0x17, 0x2c, 0x91, 0xd2, 0x2b, 0x6b, 0xdf, 0x11, 0x63, 0x4f, 0x66,
+    0x4e, 0x60, 0x45, 0x03, 0xac, 0x55, 0x90, 0x7c, 0x71, 0x16, 0x5e,
+    0xbe, 0xfe, 0x17, 0xce, 0xf1, 0xef, 0xe8, 0x23, 0xa3
+};
+const uint8_t kHKDF_okm_tc4_sha512_256[] = {
+    0xce, 0xa7, 0x08, 0xf9, 0xe8, 0x3b, 0x5b, 0x33, 0x39, 0x59, 0x9b,
+    0xcf, 0x6b, 0x97, 0x08, 0xde, 0x5e, 0xdf, 0x23, 0xab, 0xb5, 0x95,
+    0xfc, 0xbb, 0xcc, 0xb5, 0xf5, 0x18, 0x70, 0x1e, 0x7b, 0x72, 0x07,
+    0x74, 0xa8, 0xef, 0xa7, 0x9b, 0x99, 0x46, 0xb3, 0x1f
+};
 
 // RFC Test Case 5 repeats the inputs from RFC 5869 Test Case 2; RFC Test Case 6
 // repeats the inputs from RFC 5869 Test Case 3.
@@ -1626,6 +1678,18 @@ const uint8_t kHKDF_okm_tc7_sha512[] = {
     0xe5, 0x5f, 0x0f, 0x90, 0xb0, 0xc7, 0xf6, 0x3d, 0x68, 0xeb, 0x1a, 0x80,
     0xea, 0xf0, 0x7e, 0x95, 0x3c, 0xfc, 0x0a, 0x3a, 0x52, 0x40, 0xa1, 0x55,
     0xd6, 0xe4, 0xda, 0xa9, 0x65, 0xbb
+};
+const uint8_t kHKDF_okm_tc7_sha512_224[] = {
+    0xb2, 0xf0, 0x98, 0x31, 0x2a, 0xd3, 0xfe, 0xee, 0x46, 0xe9, 0x0f,
+    0x1b, 0x90, 0x6a, 0x20, 0xa1, 0xab, 0xee, 0x95, 0xbb, 0xcd, 0xf8,
+    0x16, 0x30, 0xc7, 0x1c, 0x2b, 0x46, 0xc6, 0xc6, 0x15, 0xbe, 0x23,
+    0x54, 0x38, 0x2f, 0x42, 0x56, 0x4d, 0xee, 0x56, 0x4d
+};
+const uint8_t kHKDF_okm_tc7_sha512_256[] = {
+    0x6e, 0x15, 0x36, 0x0b, 0x08, 0x47, 0xd9, 0xef, 0x32, 0xa4, 0xa8,
+    0x0d, 0x5e, 0x1f, 0x58, 0xce, 0xb3, 0xe9, 0x01, 0xf9, 0x29, 0x80,
+    0x4e, 0xcf, 0x01, 0x6a, 0x8c, 0xf3, 0x59, 0x18, 0xb5, 0xdb, 0x99,
+    0x8d, 0x1f, 0x09, 0x1e, 0x83, 0x67, 0xa1, 0x82, 0x62
 };
 
 static const struct HKDFTestVector {
@@ -1690,6 +1754,23 @@ static const struct HKDFTestVector {
         kHKDF_okm_tc1_sha512, sizeof(kHKDF_okm_tc1_sha512),
         AWSLC_APPROVED,
     },
+    {
+        EVP_sha512_224,
+        kHKDF_ikm_tc1, sizeof(kHKDF_ikm_tc1),
+        kHKDF_salt_tc1, sizeof(kHKDF_salt_tc1),
+        kHKDF_info_tc1, sizeof(kHKDF_info_tc1),
+        kHKDF_okm_tc1_sha512_224, sizeof(kHKDF_okm_tc1_sha512_224),
+        AWSLC_APPROVED,
+    },
+    {
+        EVP_sha512_256,
+        kHKDF_ikm_tc1, sizeof(kHKDF_ikm_tc1),
+        kHKDF_salt_tc1, sizeof(kHKDF_salt_tc1),
+        kHKDF_info_tc1, sizeof(kHKDF_info_tc1),
+        kHKDF_okm_tc1_sha512_256, sizeof(kHKDF_okm_tc1_sha512_256),
+        AWSLC_APPROVED,
+    },
+
 
     // RFC 5869 Test Case 2
     {
@@ -1730,6 +1811,22 @@ static const struct HKDFTestVector {
         kHKDF_salt_tc2, sizeof(kHKDF_salt_tc2),
         kHKDF_info_tc2, sizeof(kHKDF_info_tc2),
         kHKDF_okm_tc2_sha512, sizeof(kHKDF_okm_tc2_sha512),
+        AWSLC_APPROVED,
+    },
+    {
+        EVP_sha512_224,
+        kHKDF_ikm_tc2, sizeof(kHKDF_ikm_tc2),
+        kHKDF_salt_tc2, sizeof(kHKDF_salt_tc2),
+        kHKDF_info_tc2, sizeof(kHKDF_info_tc2),
+        kHKDF_okm_tc2_sha512_224, sizeof(kHKDF_okm_tc2_sha512_224),
+        AWSLC_APPROVED,
+    },
+    {
+        EVP_sha512_256,
+        kHKDF_ikm_tc2, sizeof(kHKDF_ikm_tc2),
+        kHKDF_salt_tc2, sizeof(kHKDF_salt_tc2),
+        kHKDF_info_tc2, sizeof(kHKDF_info_tc2),
+        kHKDF_okm_tc2_sha512_256, sizeof(kHKDF_okm_tc2_sha512_256),
         AWSLC_APPROVED,
     },
 
@@ -1777,6 +1874,22 @@ static const struct HKDFTestVector {
         kHKDF_okm_tc3_sha512, sizeof(kHKDF_okm_tc3_sha512),
         AWSLC_NOT_APPROVED,
     },
+    {
+        EVP_sha512_224,
+        kHKDF_ikm_tc3, sizeof(kHKDF_ikm_tc3),
+        kHKDF_salt_tc3, 0,
+        kHKDF_info_tc3, 0,
+        kHKDF_okm_tc3_sha512_224, sizeof(kHKDF_okm_tc3_sha512_224),
+        AWSLC_NOT_APPROVED,
+    },
+    {
+        EVP_sha512_256,
+        kHKDF_ikm_tc3, sizeof(kHKDF_ikm_tc3),
+        kHKDF_salt_tc3, 0,
+        kHKDF_salt_tc3, 0,
+        kHKDF_okm_tc3_sha512_256, sizeof(kHKDF_okm_tc3_sha512_256),
+        AWSLC_NOT_APPROVED,
+    },
 
     // RFC 5869 Test Case 4
     {
@@ -1817,6 +1930,22 @@ static const struct HKDFTestVector {
         kHKDF_salt_tc4, sizeof(kHKDF_salt_tc4),
         kHKDF_info_tc4, sizeof(kHKDF_info_tc4),
         kHKDF_okm_tc4_sha512, sizeof(kHKDF_okm_tc4_sha512),
+        AWSLC_APPROVED,
+    },
+    {
+        EVP_sha512_224,
+        kHKDF_ikm_tc4, sizeof(kHKDF_ikm_tc4),
+        kHKDF_salt_tc4, sizeof(kHKDF_salt_tc4),
+        kHKDF_info_tc4, sizeof(kHKDF_info_tc4),
+        kHKDF_okm_tc4_sha512_224, sizeof(kHKDF_okm_tc4_sha512_224),
+        AWSLC_APPROVED,
+    },
+    {
+        EVP_sha512_256,
+        kHKDF_ikm_tc4, sizeof(kHKDF_ikm_tc4),
+        kHKDF_salt_tc4, sizeof(kHKDF_salt_tc4),
+        kHKDF_info_tc4, sizeof(kHKDF_info_tc4),
+        kHKDF_okm_tc4_sha512_256, sizeof(kHKDF_okm_tc4_sha512_256),
         AWSLC_APPROVED,
     },
 
@@ -1864,6 +1993,22 @@ static const struct HKDFTestVector {
         NULL, 0,
         kHKDF_info_tc7, 0,
         kHKDF_okm_tc7_sha512, sizeof(kHKDF_okm_tc7_sha512),
+        AWSLC_NOT_APPROVED,
+    },
+    {
+        EVP_sha512_224,
+        kHKDF_ikm_tc7, sizeof(kHKDF_ikm_tc7),
+        NULL, 0,
+        kHKDF_info_tc7, 0,
+        kHKDF_okm_tc7_sha512_224, sizeof(kHKDF_okm_tc7_sha512_224),
+        AWSLC_NOT_APPROVED,
+    },
+    {
+        EVP_sha512_256,
+        kHKDF_ikm_tc7, sizeof(kHKDF_ikm_tc7),
+        NULL, 0,
+        kHKDF_info_tc7, 0,
+        kHKDF_okm_tc7_sha512_256, sizeof(kHKDF_okm_tc7_sha512_256),
         AWSLC_NOT_APPROVED,
     },
 };
@@ -2519,6 +2664,71 @@ TEST_P(RSAServiceIndicatorTest, ManualRSASignVerify) {
   ASSERT_EQ(approved, test.sig_ver_expect_approved);
 }
 
+static int custom_sign(int max_out, const uint8_t *in, uint8_t *out, RSA *rsa,
+                       int padding) {
+  return 0;
+}
+
+static int custom_finish(RSA *rsa) {
+  const RSA_METHOD *meth = RSA_get_method(rsa);
+  RSA_meth_free((RSA_METHOD *) meth);
+  return 1;
+}
+
+TEST_P(RSAServiceIndicatorTest, RSAMethod) {
+  const RSATestVector &test = GetParam();
+
+  FIPSStatus approved = AWSLC_NOT_APPROVED;
+
+  bssl::UniquePtr<EVP_PKEY> pkey(EVP_PKEY_new());
+  ASSERT_TRUE(pkey);
+
+  RSA *rsa = nullptr;
+  if(test.use_pss) {
+    AssignRSAPSSKey(pkey.get(), test.key_size);
+  } else {
+    rsa = GetRSAKey(test.key_size);
+    ASSERT_TRUE(EVP_PKEY_set1_RSA(pkey.get(), rsa));
+  }
+
+  // If meth is previously set, avoid overwriting cached RSA key
+  if (!EVP_PKEY_get0_RSA(pkey.get())->meth->sign_raw) {
+    RSA_METHOD *meth = RSA_meth_new(NULL, 0);
+    RSA_meth_set_priv_enc(meth, custom_sign);
+    RSA_meth_set_finish(meth, custom_finish);
+    RSA_set_method(EVP_PKEY_get0_RSA(pkey.get()), meth);
+  }
+
+  bssl::ScopedEVP_MD_CTX ctx;
+  ASSERT_TRUE(EVP_DigestInit(ctx.get(), test.func()));
+  ASSERT_TRUE(EVP_DigestUpdate(ctx.get(), kPlaintext, sizeof(kPlaintext)));
+
+  // Manual construction for signing.
+  bssl::UniquePtr<EVP_PKEY_CTX> pctx(EVP_PKEY_CTX_new(pkey.get(), nullptr));
+  ASSERT_TRUE(EVP_PKEY_sign_init(pctx.get()));
+  ASSERT_TRUE(EVP_PKEY_CTX_set_signature_md(pctx.get(), test.func()));
+  if (test.use_pss) {
+    ASSERT_TRUE(EVP_PKEY_CTX_set_rsa_padding(pctx.get(),
+                                             RSA_PKCS1_PSS_PADDING));
+    ASSERT_TRUE(EVP_PKEY_CTX_set_rsa_pss_saltlen(pctx.get(), -1));
+  }
+  EVP_MD_CTX_set_pkey_ctx(ctx.get(), pctx.get());
+  // Determine the size of the signature.
+  size_t sig_len = 0;
+  CALL_SERVICE_AND_CHECK_APPROVED(approved,
+                                  ASSERT_TRUE(EVP_DigestSignFinal(ctx.get(), nullptr, &sig_len)));
+  ASSERT_EQ(approved, AWSLC_NOT_APPROVED);
+
+  std::vector<uint8_t> sig;
+  sig.resize(sig_len);
+  // Custom sign will be called, never approved
+  CALL_SERVICE_AND_CHECK_APPROVED(approved,
+                                  EVP_DigestSignFinal(ctx.get(), sig.data(), &sig_len));
+
+  ASSERT_EQ(approved, AWSLC_NOT_APPROVED);
+  sig.resize(sig_len);
+}
+
 struct ECDSATestVector {
   // nid is the input curve nid.
   const int nid;
@@ -2876,6 +3086,128 @@ TEST_P(ECDSAServiceIndicatorTest, ManualECDSASignVerify) {
   EXPECT_EQ(approved, test.sig_ver_expect_approved);
 }
 
+static int ecdsa_sign(int type, const unsigned char *dgst, int dgstlen,
+                      unsigned char *sig, unsigned int *siglen,
+                      const BIGNUM *kinv, const BIGNUM *r, EC_KEY *ec) {
+
+  ECDSA_SIG *ret = ECDSA_do_sign(dgst, dgstlen, ec);
+  if (!ret) {
+    *siglen = 0;
+    return 0;
+  }
+
+  CBB cbb;
+  CBB_init_fixed(&cbb, sig, ECDSA_size(ec));
+  size_t len;
+  if (!ECDSA_SIG_marshal(&cbb, ret) ||
+      !CBB_finish(&cbb, nullptr, &len)) {
+    ECDSA_SIG_free(ret);
+    OPENSSL_PUT_ERROR(ECDSA, ECDSA_R_ENCODE_ERROR);
+    *siglen = 0;
+    return 0;
+  }
+
+  *siglen = (unsigned)len;
+
+  // To track whether custom implementation was called
+  EC_KEY_set_ex_data(ec, 0, (void*)"ecdsa_sign");
+
+  ECDSA_SIG_free(ret);
+  return 1;
+}
+
+static void ecdsa_finish(EC_KEY *ec)
+{
+  const EC_KEY_METHOD *ec_meth = EC_KEY_get_method(ec);
+  EC_KEY_METHOD_free((EC_KEY_METHOD *) ec_meth);
+}
+
+TEST_P(ECDSAServiceIndicatorTest, ECKeyMethod) {
+  const ECDSATestVector &test = GetParam();
+  if (test.nid == NID_secp256k1 && !kCurveSecp256k1Supported) {
+    GTEST_SKIP();
+  }
+
+  FIPSStatus approved = AWSLC_NOT_APPROVED;
+
+  const EC_GROUP *group = EC_GROUP_new_by_curve_name(test.nid);
+  bssl::UniquePtr<EC_KEY> eckey(EC_KEY_new());
+  bssl::UniquePtr<EVP_PKEY> pkey(EVP_PKEY_new());
+  bssl::ScopedEVP_MD_CTX md_ctx;
+  ASSERT_TRUE(eckey);
+  ASSERT_TRUE(EC_KEY_set_group(eckey.get(), group));
+
+  EC_KEY_METHOD *meth = EC_KEY_METHOD_new(NULL);
+  EC_KEY_METHOD_set_sign(meth, ecdsa_sign, NULL, NULL);
+  EC_KEY_METHOD_set_init(meth, NULL, ecdsa_finish, NULL, NULL, NULL, NULL);
+  EC_KEY_set_method(eckey.get(), meth);
+
+  // Generate an EC key.
+  ASSERT_TRUE(EC_KEY_generate_key(eckey.get()));
+  ASSERT_TRUE(EVP_PKEY_set1_EC_KEY(pkey.get(), eckey.get()));
+
+  // Test running the EVP_DigestSign interfaces one by one directly, and check
+  // |EVP_DigestSignFinal| for approval at the end. |EVP_DigestSignInit|,
+  // |EVP_DigestSignUpdate| should not be approved because they do not indicate
+  // an entire service has been done.
+  CALL_SERVICE_AND_CHECK_APPROVED(
+          approved, ASSERT_TRUE(EVP_DigestSignInit(md_ctx.get(), nullptr,
+                                                   test.func(), nullptr,
+                                                   pkey.get())));
+  EXPECT_EQ(approved, AWSLC_NOT_APPROVED);
+  CALL_SERVICE_AND_CHECK_APPROVED(approved,
+                                  ASSERT_TRUE(EVP_DigestSignUpdate(md_ctx.get(),
+                                                                   kPlaintext,
+                                                                   sizeof(kPlaintext))));
+  EXPECT_EQ(approved, AWSLC_NOT_APPROVED);
+  // Determine the size of the signature. The first call of
+  // |EVP_DigestSignFinal| should not return an approval check because no crypto
+  // is being done when |nullptr| is given as the |out_sig| field.
+  size_t max_sig_len;
+  CALL_SERVICE_AND_CHECK_APPROVED(approved,
+                                  ASSERT_TRUE(EVP_DigestSignFinal(md_ctx.get(),
+                                                                  nullptr,
+                                                                  &max_sig_len)));
+  EXPECT_EQ(approved, AWSLC_NOT_APPROVED);
+  std::vector<uint8_t> signature(max_sig_len);
+  // The second call performs the actual operation and should not return an
+  // approval because custom sign functionality is defined.
+  size_t sig_len = max_sig_len;
+  CALL_SERVICE_AND_CHECK_APPROVED(approved,
+                                  ASSERT_TRUE(EVP_DigestSignFinal(md_ctx.get(),
+                                                                  signature.data(),
+                                                                  &sig_len)));
+  ASSERT_STREQ(static_cast<const char*>(EC_KEY_get_ex_data(eckey.get(), 0)), "ecdsa_sign");
+
+  ASSERT_LE(sig_len, signature.size());
+  EXPECT_EQ(approved, AWSLC_NOT_APPROVED);
+
+  // Test using the one-shot |EVP_DigestSign| function for approval. It should
+  // not return an approval because custom sign functionality is defined.
+  md_ctx.Reset();
+  CALL_SERVICE_AND_CHECK_APPROVED(approved,
+                                  ASSERT_TRUE(EVP_DigestSignInit(md_ctx.get(),
+                                                                 nullptr,
+                                                                 test.func(),
+                                                                 nullptr,
+                                                                 pkey.get())));
+  EXPECT_EQ(approved, AWSLC_NOT_APPROVED);
+  sig_len = max_sig_len;
+  EC_KEY_set_ex_data(eckey.get(), 0, (void*) "");
+  ASSERT_STREQ(static_cast<const char*>(EC_KEY_get_ex_data(eckey.get(), 0)), "");
+
+  CALL_SERVICE_AND_CHECK_APPROVED(approved,
+                                  ASSERT_TRUE(EVP_DigestSign(md_ctx.get(),
+                                                             signature.data(),
+                                                             &sig_len,
+                                                             kPlaintext,
+                                                             sizeof(kPlaintext))));
+  ASSERT_STREQ(static_cast<const char*>(EC_KEY_get_ex_data(eckey.get(), 0)), "ecdsa_sign");
+
+  ASSERT_LE(sig_len, signature.size());
+  EXPECT_EQ(approved, AWSLC_NOT_APPROVED);
+}
+
 struct ECDHTestVector {
   // nid is the input curve nid.
   const int nid;
@@ -3194,6 +3526,71 @@ static const uint8_t kPBKDF2DerivedKey6SHA512[] = {
     0x49   // 25 bytes
 };
 
+static const uint8_t kPBKDF2DerivedKey1SHA512_224[] = {
+    0xb3, 0x4a, 0xb6, 0x26, 0x27, 0x6a, 0x61, 0xce, 0x19, 0xd2,
+    0xec, 0xb4, 0xc7, 0xe1, 0x5f, 0x81, 0x98, 0xa2, 0x98, 0x9a  // 20 bytes
+};
+
+static const uint8_t kPBKDF2DerivedKey2SHA512_224[] = {
+    0xb8, 0x87, 0x8a, 0xc5, 0xe4, 0x50, 0x9c, 0x16, 0x5c, 0x1b,
+    0x50, 0x89, 0x61, 0xfa, 0x3c, 0x3a, 0xfc, 0xef, 0x3f, 0x37  // 20 bytes
+};
+
+static const uint8_t kPBKDF2DerivedKey3SHA512_224[] = {
+    0xed, 0x54, 0xaf, 0x69, 0x9c, 0xc3, 0x07, 0xe0, 0x89, 0x65,
+    0x09, 0x8b, 0xda, 0x5f, 0xf4, 0xe4, 0x1e, 0xa1, 0x93, 0x1f  // 20 bytes
+};
+
+static const uint8_t kPBKDF2DerivedKey4SHA512_224[] = {
+    0xca, 0x62, 0x62, 0xfa, 0x52, 0xea, 0xd9, 0x88, 0x78, 0x86,
+    0x7e, 0x13, 0x75, 0xd0, 0xa5, 0x8a, 0x8a, 0xe0, 0x4d, 0x00  // 20 bytes
+};
+
+static const uint8_t kPBKDF2DerivedKey5SHA512_224[] = {
+    0x57, 0x3d, 0xf9, 0x67, 0x62, 0xea, 0x7d, 0xa4, 0xf7,
+    0x12, 0x31, 0x85, 0x9c, 0xa2, 0x82, 0xef, 0x48, 0x27,
+    0x64, 0xad, 0x96, 0x71, 0xc5, 0x27, 0x5c  // 25 bytes
+};
+
+static const uint8_t kPBKDF2DerivedKey6SHA512_224[] = {
+    0xcb, 0x42, 0xca, 0xcd, 0x9a, 0xe7, 0xc6, 0x27, 0xb3, 0xa5, 0x04, 0x86,
+    0x75, 0xbc, 0xed, 0xd9, 0xdd, 0xf8, 0xa5, 0xfd, 0xfe, 0x7a, 0x6a, 0xc6,
+    0xcc  // 25 bytes
+};
+
+static const uint8_t kPBKDF2DerivedKey1SHA512_256[] = {
+    0x4b, 0x6a, 0x63, 0x11, 0x7d, 0x3e, 0xc0, 0x03, 0x26, 0x24, 0x61,
+    0x60, 0x82, 0xc1, 0xc1, 0x91, 0x2f, 0x56, 0xfa, 0x5f // 20 bytes
+
+};
+
+static const uint8_t kPBKDF2DerivedKey2SHA512_256[] = {
+    0xfc, 0xfd, 0x10, 0x8c, 0x99, 0xcc, 0x88, 0x8e, 0xc0, 0xaf,
+    0x9f, 0x18, 0x48, 0x85, 0xaf, 0xf5, 0xf0, 0x2d, 0x19, 0xa9  // 20 bytes
+};
+
+static const uint8_t kPBKDF2DerivedKey3SHA512_256[] = {
+    0xf2, 0xfb, 0xe5, 0xf8, 0xec, 0x36, 0x18, 0xbb, 0x14, 0x52,
+    0x79, 0xa8, 0xc6, 0xa8, 0xdf, 0xa4, 0x76, 0xc2, 0x82, 0xa3  // 20 bytes
+};
+
+static const uint8_t kPBKDF2DerivedKey4SHA512_256[] = {
+    0x25, 0xf5, 0xd3, 0x8f, 0x4b, 0x39, 0xd9, 0x2b, 0x43, 0x6e,
+    0x52, 0xf8, 0xa9, 0x2f, 0xb6, 0x9d, 0xf7, 0x6f, 0xb0, 0x14  // 20 bytes
+};
+
+static const uint8_t kPBKDF2DerivedKey5SHA512_256[] = {
+    0x31, 0xcf, 0x94, 0xe3, 0xd8, 0xe3, 0x6a, 0xa1, 0x8d,
+    0x40, 0xad, 0x92, 0x65, 0x4a, 0xb8, 0x0f, 0x50, 0x0e,
+    0xd7, 0xfb, 0x57, 0x5a, 0x22, 0x15, 0x54  // 25 bytes
+};
+
+static const uint8_t kPBKDF2DerivedKey6SHA512_256[] = {
+    0x4d, 0x68, 0xef, 0xc6, 0x80, 0xd2, 0x30, 0x5d, 0x23,
+    0x44, 0x9c, 0x92, 0xc4, 0x3b, 0x5b, 0xb7, 0x7f, 0x75,
+    0x03, 0x4d, 0x95, 0xc5, 0x48, 0xaa, 0x44 // 25 bytes
+};
+
 static const struct PBKDF2TestVector {
     // func is the hash function for PBKDF2 to test.
     const EVP_MD *(*func)();
@@ -3457,6 +3854,108 @@ static const struct PBKDF2TestVector {
         kPBKDF2Salt2, sizeof(kPBKDF2Salt2),
         999,
         sizeof(kPBKDF2DerivedKey6SHA512), kPBKDF2DerivedKey6SHA512,
+        AWSLC_NOT_APPROVED
+    },
+
+    // SHA512_224 using
+    // https://github.com/brycx/Test-Vector-Generation/blob/master/PBKDF2/pbkdf2-hmac-sha2-test-vectors.md
+    {
+        EVP_sha512_224,
+        kPBKDF2Password1, sizeof(kPBKDF2Password1),
+        kPBKDF2Salt1, sizeof(kPBKDF2Salt1),
+        1,
+        sizeof(kPBKDF2DerivedKey1SHA512_224), kPBKDF2DerivedKey1SHA512_224,
+        AWSLC_NOT_APPROVED
+    },
+    {
+        EVP_sha512_224,
+        kPBKDF2Password1, sizeof(kPBKDF2Password1),
+        kPBKDF2Salt1, sizeof(kPBKDF2Salt1),
+        2,
+        sizeof(kPBKDF2DerivedKey2SHA512_224), kPBKDF2DerivedKey2SHA512_224,
+        AWSLC_NOT_APPROVED
+    },
+    {
+        EVP_sha512_224,
+        kPBKDF2Password1, sizeof(kPBKDF2Password1),
+        kPBKDF2Salt1, sizeof(kPBKDF2Salt1),
+        4096,
+        sizeof(kPBKDF2DerivedKey3SHA512_224), kPBKDF2DerivedKey3SHA512_224,
+        AWSLC_NOT_APPROVED
+    },
+    {
+        EVP_sha512_224,
+        kPBKDF2Password1, sizeof(kPBKDF2Password1),
+        kPBKDF2Salt1, sizeof(kPBKDF2Salt1),
+        16777216,
+        sizeof(kPBKDF2DerivedKey4SHA512_224), kPBKDF2DerivedKey4SHA512_224,
+        AWSLC_NOT_APPROVED
+    },
+    {
+        EVP_sha512_224,
+        kPBKDF2Password2, sizeof(kPBKDF2Password2),
+        kPBKDF2Salt2, sizeof(kPBKDF2Salt2),
+        4096,
+        sizeof(kPBKDF2DerivedKey5SHA512_224), kPBKDF2DerivedKey5SHA512_224,
+        AWSLC_APPROVED
+    },
+    {
+        EVP_sha512_224,
+        kPBKDF2Password2, sizeof(kPBKDF2Password2),
+        kPBKDF2Salt2, sizeof(kPBKDF2Salt2),
+        999,
+        sizeof(kPBKDF2DerivedKey6SHA512_224), kPBKDF2DerivedKey6SHA512_224,
+        AWSLC_NOT_APPROVED
+    },
+
+    // SHA512_256 using
+    // https://github.com/brycx/Test-Vector-Generation/blob/master/PBKDF2/pbkdf2-hmac-sha2-test-vectors.md
+    {
+        EVP_sha512_256,
+        kPBKDF2Password1, sizeof(kPBKDF2Password1),
+        kPBKDF2Salt1, sizeof(kPBKDF2Salt1),
+        1,
+        sizeof(kPBKDF2DerivedKey1SHA512_256), kPBKDF2DerivedKey1SHA512_256,
+        AWSLC_NOT_APPROVED
+    },
+    {
+        EVP_sha512_256,
+        kPBKDF2Password1, sizeof(kPBKDF2Password1),
+        kPBKDF2Salt1, sizeof(kPBKDF2Salt1),
+        2,
+        sizeof(kPBKDF2DerivedKey2SHA512_256), kPBKDF2DerivedKey2SHA512_256,
+        AWSLC_NOT_APPROVED
+    },
+    {
+        EVP_sha512_256,
+        kPBKDF2Password1, sizeof(kPBKDF2Password1),
+        kPBKDF2Salt1, sizeof(kPBKDF2Salt1),
+        4096,
+        sizeof(kPBKDF2DerivedKey3SHA512_256), kPBKDF2DerivedKey3SHA512_256,
+        AWSLC_NOT_APPROVED
+    },
+    {
+        EVP_sha512_256,
+        kPBKDF2Password1, sizeof(kPBKDF2Password1),
+        kPBKDF2Salt1, sizeof(kPBKDF2Salt1),
+        16777216,
+        sizeof(kPBKDF2DerivedKey4SHA512_256), kPBKDF2DerivedKey4SHA512_256,
+        AWSLC_NOT_APPROVED
+    },
+    {
+        EVP_sha512_256,
+        kPBKDF2Password2, sizeof(kPBKDF2Password2),
+        kPBKDF2Salt2, sizeof(kPBKDF2Salt2),
+        4096,
+        sizeof(kPBKDF2DerivedKey5SHA512_256), kPBKDF2DerivedKey5SHA512_256,
+        AWSLC_APPROVED
+    },
+    {
+        EVP_sha512_256,
+        kPBKDF2Password2, sizeof(kPBKDF2Password2),
+        kPBKDF2Salt2, sizeof(kPBKDF2Salt2),
+        999,
+        sizeof(kPBKDF2DerivedKey6SHA512_256), kPBKDF2DerivedKey6SHA512_256,
         AWSLC_NOT_APPROVED
     },
 };
@@ -4595,8 +5094,10 @@ INSTANTIATE_TEST_SUITE_P(All, KBKDFCtrHmacIndicatorTest,
 TEST_P(KBKDFCtrHmacIndicatorTest, KBKDF) {
   const KBKDFCtrHmacTestVector &vector = GetParam();
 
-  const uint8_t secret[20] = {'A', 'W', 'S', '-', 'L', 'C', ' ', 'K', 'B', 'K',
-                              'D', 'F', '-', 'C', 'T', 'R', ' ', 'K', 'E', 'Y'};
+  // 14 bytes (112 bits) is the minimum key-derivation key that would be
+  // approved if using an approved algorithm;
+  const uint8_t secret[14] = {'K', 'B', 'K', 'D', 'F', '-', 'C',
+                              'T', 'R', ' ', ' ', 'K', 'E', 'Y'};
   const uint8_t info[16] = {'A', 'W', 'S', '-', 'L', 'C', ' ', 'K',
                             'B', 'K', 'D', 'F', '-', 'C', 'T', 'R'};
   uint8_t output[16] = {0};
@@ -4608,6 +5109,16 @@ TEST_P(KBKDFCtrHmacIndicatorTest, KBKDF) {
                     &output[0], sizeof(output), vector.md(), &secret[0],
                     sizeof(secret), &info[0], sizeof(info))));
   ASSERT_EQ(vector.expectation, approved);
+
+  // Pass a secret key (key-derivation key) size of 13 bytes (104 bits)
+  // regardless of algorithm, this is less then 112 bits minimum
+  // required by SP 800-131Ar1, Section 8. So indicator should reflect
+  // this being unapproved.
+  CALL_SERVICE_AND_CHECK_APPROVED(
+      approved,
+      ASSERT_TRUE(KBKDF_ctr_hmac(&output[0], sizeof(output), vector.md(),
+                                 &secret[0], 13, &info[0], sizeof(info))));
+  ASSERT_EQ(AWSLC_NOT_APPROVED, approved);
 }
 
 TEST(ServiceIndicatorTest, ML_KEM) {
@@ -4735,7 +5246,7 @@ TEST(ServiceIndicatorTest, ED25519SigGenVerify) {
 // Since this is running in FIPS mode it should end in FIPS
 // Update this when the AWS-LC version number is modified
 TEST(ServiceIndicatorTest, AWSLCVersionString) {
-  ASSERT_STREQ(awslc_version_string(), "AWS-LC FIPS 1.35.1");
+  ASSERT_STREQ(awslc_version_string(), "AWS-LC FIPS 1.41.1");
 }
 
 #else
@@ -4778,6 +5289,6 @@ TEST(ServiceIndicatorTest, BasicTest) {
 // Since this is not running in FIPS mode it shouldn't end in FIPS
 // Update this when the AWS-LC version number is modified
 TEST(ServiceIndicatorTest, AWSLCVersionString) {
-  ASSERT_STREQ(awslc_version_string(), "AWS-LC 1.35.1");
+  ASSERT_STREQ(awslc_version_string(), "AWS-LC 1.41.1");
 }
 #endif // AWSLC_FIPS

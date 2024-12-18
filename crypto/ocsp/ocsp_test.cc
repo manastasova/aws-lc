@@ -416,6 +416,7 @@ TEST(OCSPTest, TestGoodOCSP) {
   // This will cause the function to fail in two places, once when checking
   // if "(current_time + nsec) > thisupd [Status Not Yet Valid]", and a second
   // time when checking if "nextupd > (current_time - nsec) [Status Expired]".
+  ERR_clear_error();
   EXPECT_FALSE(OCSP_check_validity(thisupd, nextupd, -time(nullptr), -1));
   err = ERR_get_error();
   EXPECT_EQ(OCSP_R_STATUS_NOT_YET_VALID, ERR_GET_REASON(err));
@@ -972,6 +973,8 @@ static const OCSPRequestTestVector kRequestTestVectors[] = {
      "rsa_key", EVP_sha1()},
     {"ocsp_request", OCSP_REQUEST_PARSE_SUCCESS, OCSP_SIGN_SUCCESS, "rsa_cert",
      "rsa_key", EVP_sha256()},
+    {"ocsp_request", OCSP_REQUEST_PARSE_SUCCESS, OCSP_SIGN_SUCCESS, "rsa_cert",
+     "rsa_key", nullptr},
     {"ocsp_request_attached_cert", OCSP_REQUEST_PARSE_SUCCESS, OCSP_SIGN_ERROR,
      "rsa_cert", "rsa_key", nullptr},
     {"ocsp_request_no_nonce", OCSP_REQUEST_PARSE_SUCCESS, OCSP_SIGN_SUCCESS,
@@ -987,6 +990,8 @@ static const OCSPRequestTestVector kRequestTestVectors[] = {
      "ecdsa_cert", "ecdsa_key", EVP_sha1()},
     {"ocsp_request", OCSP_REQUEST_PARSE_SUCCESS, OCSP_SIGN_SUCCESS,
      "ecdsa_cert", "ecdsa_key", EVP_sha256()},
+    {"ocsp_request", OCSP_REQUEST_PARSE_SUCCESS, OCSP_SIGN_SUCCESS,
+     "ecdsa_cert", "ecdsa_key", nullptr},
     {"ocsp_request_no_nonce", OCSP_REQUEST_PARSE_SUCCESS, OCSP_SIGN_SUCCESS,
      "rsa_cert", "rsa_key", EVP_sha256()},
     {"ocsp_request_no_nonce", OCSP_REQUEST_PARSE_SUCCESS, OCSP_SIGN_SUCCESS,
@@ -1136,10 +1141,12 @@ static const OCSPResponseSignTestVector kOCSPResponseSignTestVectors[] = {
     {OCSP_SIGN_SUCCESS, "rsa_cert", "rsa_key", EVP_sha1()},
     {OCSP_SIGN_SUCCESS, "rsa_cert", "rsa_key", EVP_sha256()},
     {OCSP_SIGN_SUCCESS, "rsa_cert", "rsa_key", EVP_sha512()},
+    {OCSP_SIGN_SUCCESS, "rsa_cert", "rsa_key", nullptr},
     // Test signing with ECDSA certs and keys.
     {OCSP_SIGN_SUCCESS, "ecdsa_cert", "ecdsa_key", EVP_sha1()},
     {OCSP_SIGN_SUCCESS, "ecdsa_cert", "ecdsa_key", EVP_sha256()},
     {OCSP_SIGN_SUCCESS, "ecdsa_cert", "ecdsa_key", EVP_sha512()},
+    {OCSP_SIGN_SUCCESS, "ecdsa_cert", "ecdsa_key", nullptr},
     // Test certificate type mismatch.
     {OCSP_SIGN_ERROR, "rsa_cert", "ecdsa_key", EVP_sha256()},
     {OCSP_SIGN_ERROR, "ecdsa_cert", "rsa_key", EVP_sha256()},

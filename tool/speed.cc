@@ -85,8 +85,13 @@ static inline void *align_pointer(void *ptr, size_t alignment) {
 }
 #endif
 
-#if defined(OPENSSL_IS_AWSLC) && defined(OPENSSL_AARCH64) && !defined(OPENSSL_WINDOWS) && \
-    defined(MAKE_DIT_AVAILABLE)
+#if defined(INTERNAL_TOOL)
+#include "../crypto/fipsmodule/rand/internal.h"
+#endif
+
+
+#if defined(OPENSSL_IS_AWSLC) && defined(AARCH64_DIT_SUPPORTED) && (AWSLC_API_VERSION > 30)
+#include "../crypto/fipsmodule/cpucap/internal.h"
 #define DIT_OPTION
 #endif
 
@@ -862,7 +867,7 @@ static bool SpeedKEM(std::string selected) {
          SpeedSingleKEM("Kyber1024_R3", NID_KYBER1024_R3, selected);
 }
 
-#if defined(ENABLE_DILITHIUM) && AWSLC_API_VERSION > 20
+#if defined(ENABLE_DILITHIUM) && AWSLC_API_VERSION > 31
 
 static bool SpeedDigestSignNID(const std::string &name, int nid,
                             const std::string &selected) {
@@ -870,8 +875,11 @@ static bool SpeedDigestSignNID(const std::string &name, int nid,
     return true;
   }
 
-  // Setup CTX for Sign/Verify Operations
-  BM_NAMESPACE::UniquePtr<EVP_PKEY_CTX> pkey_ctx(EVP_PKEY_CTX_new_id(nid, nullptr));
+  // Setup CTX for Sign/Verify Operations of type EVP_PKEY_PQDSA
+  BM_NAMESPACE::UniquePtr<EVP_PKEY_CTX> pkey_ctx(EVP_PKEY_CTX_new_id(EVP_PKEY_PQDSA, nullptr));
+
+  // Setup CTX for specific signature alg NID
+  EVP_PKEY_CTX_pqdsa_set_params(pkey_ctx.get(), nid);
 
   // Setup CTX for Keygen Operations
   if (!pkey_ctx || EVP_PKEY_keygen_init(pkey_ctx.get()) != 1) {
@@ -925,7 +933,9 @@ static bool SpeedDigestSignNID(const std::string &name, int nid,
 }
 
 static bool SpeedDigestSign(const std::string &selected) {
-  return SpeedDigestSignNID("Dilithium3", EVP_PKEY_DILITHIUM3, selected);
+  return SpeedDigestSignNID("MLDSA44", NID_MLDSA44, selected) &&
+         SpeedDigestSignNID("MLDSA65", NID_MLDSA65, selected) &&
+         SpeedDigestSignNID("MLDSA87", NID_MLDSA87, selected);
 }
 
 #endif
@@ -1252,16 +1262,19 @@ static bool SpeedHmacOneShot(const EVP_MD *md, const std::string &name,
   return true;
 }
 
-static bool SpeedRandomChunk(std::string name, size_t chunk_len) {
-  uint8_t scratch[16384];
+const size_t SCRATCH_SIZE = 16384;
 
-  if (chunk_len > sizeof(scratch)) {
+using RandomFunction = std::function<void(uint8_t *, size_t)>;
+static bool SpeedRandomChunk(RandomFunction function, std::string name, size_t chunk_len) {
+  std::unique_ptr<uint8_t[]> scratch(new uint8_t[SCRATCH_SIZE]);
+
+  if (chunk_len > SCRATCH_SIZE) {
     return false;
   }
 
   TimeResults results;
-  if (!TimeFunction(&results, [chunk_len, &scratch]() -> bool {
-        RAND_bytes(scratch, chunk_len);
+  if (!TimeFunction(&results, [chunk_len, &scratch, &function]() -> bool {
+        function(scratch.get(), chunk_len);
         return true;
       })) {
     return false;
@@ -1271,13 +1284,13 @@ static bool SpeedRandomChunk(std::string name, size_t chunk_len) {
   return true;
 }
 
-static bool SpeedRandom(const std::string &selected) {
-  if (!selected.empty() && selected != "RNG") {
+static bool SpeedRandom(RandomFunction function, const std::string &name, const std::string &selected) {
+  if (!selected.empty() && name.find(selected) == std::string::npos) {
     return true;
   }
 
   for (size_t chunk_len : g_chunk_lengths) {
-    if (!SpeedRandomChunk("RNG", chunk_len)) {
+    if (!SpeedRandomChunk(function, name, chunk_len)) {
       return false;
     }
   }
@@ -2607,8 +2620,8 @@ static const argument_t kArguments[] = {
     {
         "-dit",
         kBooleanArgument,
-        "If this flag is set, the DIT flag is enabled before benchmarking and"
-        "disabled at the end."
+        "If this flag is set, the DIT flag is set before benchmarking and"
+        "reset at the end."
     },
 #endif
     {
@@ -2755,10 +2768,12 @@ bool Speed(const std::vector<std::string> &args) {
     }
   }
 #if defined(DIT_OPTION)
+  armv8_disable_dit(); // disable DIT capability at run-time
+  armv8_enable_dit();  // enable back DIT capability at run-time
   uint64_t original_dit = 0;
   if (g_dit)
   {
-    original_dit = armv8_enable_dit();
+    original_dit = armv8_set_dit();
   }
 #endif
 
@@ -2820,7 +2835,7 @@ bool Speed(const std::vector<std::string> &args) {
        !SpeedHmacOneShot(EVP_sha256(), "HMAC-SHA256-OneShot", selected) ||
        !SpeedHmacOneShot(EVP_sha384(), "HMAC-SHA384-OneShot", selected) ||
        !SpeedHmacOneShot(EVP_sha512(), "HMAC-SHA512-OneShot", selected) ||
-       !SpeedRandom(selected) ||
+       !SpeedRandom(RAND_bytes, "RNG", selected) ||
        !SpeedECDH(selected) ||
        !SpeedECDSA(selected) ||
        !SpeedECKeyGen(selected) ||
@@ -2851,7 +2866,7 @@ bool Speed(const std::vector<std::string> &args) {
 #if AWSLC_API_VERSION > 16
        !SpeedKEM(selected) ||
 #endif
-#if defined(ENABLE_DILITHIUM) && AWSLC_API_VERSION > 20
+#if defined(ENABLE_DILITHIUM) && AWSLC_API_VERSION > 31
        !SpeedDigestSign(selected) ||
 #endif
        !SpeedAEADSeal(EVP_aead_aes_128_gcm(), "AEAD-AES-128-GCM", kTLSADLen, selected) ||
@@ -2879,6 +2894,8 @@ bool Speed(const std::vector<std::string> &args) {
        !SpeedRefcount(selected) ||
 #endif
 #if defined(INTERNAL_TOOL)
+       !SpeedRandom(CRYPTO_sysrand, "CRYPTO_sysrand", selected) ||
+       !SpeedRandom(CRYPTO_sysrand_for_seed, "CRYPTO_sysrand_for_seed", selected) ||
        !SpeedHashToCurve(selected) ||
        !SpeedTrustToken("TrustToken-Exp1-Batch1", TRUST_TOKEN_experiment_v1(), 1, selected) ||
        !SpeedTrustToken("TrustToken-Exp1-Batch10", TRUST_TOKEN_experiment_v1(), 10, selected) ||

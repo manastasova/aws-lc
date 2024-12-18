@@ -4,6 +4,8 @@
 #include "internal.h"
 
 #include <gtest/gtest.h>
+#include <openssl/dh.h>
+#include <openssl/dsa.h>
 #include <openssl/ec_key.h>
 #include <openssl/err.h>
 #include <openssl/evp.h>
@@ -11,6 +13,7 @@
 #include <openssl/rsa.h>
 
 #include "../../internal.h"
+#include "../../test/test_util.h"
 #include "internal.h"
 
 class EvpPkeyCtxCtrlStrTest : public ::testing::Test {
@@ -127,11 +130,13 @@ TEST_F(EvpPkeyCtxCtrlStrTest, RsaKeygenPubexp) {
   ASSERT_TRUE(ctx);
   ASSERT_TRUE(EVP_PKEY_keygen_init(ctx.get()));
 #if defined(BORINGSSL_FIPS)
+  ASSERT_EQ(EVP_PKEY_CTX_ctrl_str(ctx.get(), "rsa_keygen_pubexp", "65537"), 1);
   ASSERT_EQ(EVP_PKEY_CTX_ctrl_str(ctx.get(), "rsa_keygen_pubexp", "729"), 0);
 #else
-  EVP_PKEY *raw = nullptr;
   ASSERT_EQ(EVP_PKEY_CTX_ctrl_str(ctx.get(), "rsa_keygen_pubexp", "729"), 1);
+#endif
   ASSERT_EQ(EVP_PKEY_CTX_ctrl_str(ctx.get(), "rsa_keygen_pubexp", "gg"), -2);
+  EVP_PKEY *raw = nullptr;
   ASSERT_TRUE(EVP_PKEY_keygen(ctx.get(), &raw));
   bssl::UniquePtr<EVP_PKEY> pkey(raw);
   ASSERT_TRUE(pkey);
@@ -140,12 +145,15 @@ TEST_F(EvpPkeyCtxCtrlStrTest, RsaKeygenPubexp) {
   ASSERT_TRUE(rsa_key);
   const BIGNUM *const_pe_bn = RSA_get0_e(rsa_key.get());
   ASSERT_TRUE(const_pe_bn != nullptr);
-
+#if defined(BORINGSSL_FIPS)
+  const uint64_t expected_pe = 65537;
+#else
   const uint64_t expected_pe = 729;
+#endif
   uint64_t pe_u64;
   ASSERT_TRUE(BN_get_u64(const_pe_bn, &pe_u64));
   EXPECT_EQ(pe_u64, expected_pe);
-#endif
+
 }
 
 TEST_F(EvpPkeyCtxCtrlStrTest, RsaMgf1Md) {
@@ -237,6 +245,33 @@ TEST_F(EvpPkeyCtxCtrlStrTest, DhPad) {
   ASSERT_EQ(EVP_PKEY_CTX_ctrl_str(ctx.get(), "dh_pad", "17"), 1);
 
   // There is no function to retrieve the DH pad value.
+}
+
+TEST_F(EvpPkeyCtxCtrlStrTest, DhParamGen) {
+  // Create a EVP_PKEY_CTX with a newly generated DH
+  bssl::UniquePtr<EVP_PKEY_CTX> ctx(EVP_PKEY_CTX_new_id(EVP_PKEY_DH, nullptr));
+  ASSERT_TRUE(ctx);
+  ASSERT_TRUE(EVP_PKEY_paramgen_init(ctx.get()));
+
+  ASSERT_EQ(EVP_PKEY_CTX_ctrl_str(ctx.get(), "dh_paramgen_prime_len", "256"), 1);
+  ASSERT_NE(EVP_PKEY_CTX_ctrl_str(ctx.get(), "dh_paramgen_prime_len", "gg"), 1);
+  ASSERT_NE(EVP_PKEY_CTX_ctrl_str(ctx.get(), "dh_paramgen_prime_len", "255"), 1);
+
+  ASSERT_EQ(EVP_PKEY_CTX_ctrl_str(ctx.get(), "dh_paramgen_generator", "5"), 1);
+  ASSERT_NE(EVP_PKEY_CTX_ctrl_str(ctx.get(), "dh_paramgen_prime_len", "gg"), 1);
+  ASSERT_NE(EVP_PKEY_CTX_ctrl_str(ctx.get(), "dh_paramgen_prime_len", "1"), 1);
+
+  EVP_PKEY* raw = nullptr;
+  ASSERT_EQ(EVP_PKEY_paramgen(ctx.get(), &raw), 1);
+  bssl::UniquePtr<EVP_PKEY> pkey(raw);
+  ASSERT_TRUE(raw);
+
+  const DH* dh = EVP_PKEY_get0_DH(pkey.get());
+  ASSERT_TRUE(dh);
+  const BIGNUM* p = DH_get0_p(dh);
+  ASSERT_TRUE(p);
+  unsigned p_size = BN_num_bits(p);
+  ASSERT_EQ(p_size, 256u);
 }
 
 static const char *hkdf_hexsalt = "000102030405060708090a0b0c";
@@ -346,4 +381,123 @@ TEST_F(EvpPkeyCtxCtrlStrTest, HkdfExtract) {
   ASSERT_TRUE(EVP_PKEY_derive(ctx.get(), actual_prk.get(), &prk_len));
 
   ASSERT_EQ(OPENSSL_memcmp(actual_prk.get(), expected_prk.get(), prk_len), 0);
+}
+
+static const char *hmac_hexkey = "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b";
+
+TEST_F(EvpPkeyCtxCtrlStrTest, HMACKey) {
+
+  bssl::UniquePtr<EVP_PKEY> pkey_hex;
+  {
+    bssl::UniquePtr<EVP_PKEY_CTX> ctx_hex(EVP_PKEY_CTX_new_id(EVP_PKEY_HMAC, NULL));
+    ASSERT_TRUE(ctx_hex);
+    ASSERT_TRUE(EVP_PKEY_keygen_init(ctx_hex.get()));
+
+    ASSERT_NE(1, EVP_PKEY_CTX_ctrl_str(ctx_hex.get(), "hexkey", "nonsense"));
+    ASSERT_TRUE(EVP_PKEY_CTX_ctrl_str(ctx_hex.get(), "hexkey", hmac_hexkey));
+    EVP_PKEY* my_pkey = NULL;
+    ASSERT_TRUE(EVP_PKEY_keygen(ctx_hex.get(), &my_pkey));
+    pkey_hex.reset(my_pkey);
+    ASSERT_TRUE(pkey_hex);
+  }
+
+  bssl::UniquePtr<EVP_PKEY> pkey_raw;
+  {
+    bssl::UniquePtr<EVP_PKEY_CTX> ctx_hex(EVP_PKEY_CTX_new_id(EVP_PKEY_HMAC, NULL));
+    ASSERT_TRUE(ctx_hex);
+    ASSERT_TRUE(EVP_PKEY_keygen_init(ctx_hex.get()));
+
+    std::vector<uint8_t> raw_key;
+    DecodeHex(&raw_key, hmac_hexkey);
+    raw_key.push_back(0);
+    ASSERT_TRUE(EVP_PKEY_CTX_ctrl_str(ctx_hex.get(), "key", (char*)raw_key.data()));
+    EVP_PKEY* my_pkey = NULL;
+    ASSERT_TRUE(EVP_PKEY_keygen(ctx_hex.get(), &my_pkey));
+    pkey_raw.reset(my_pkey);
+    ASSERT_TRUE(pkey_raw);
+  }
+
+  ASSERT_TRUE(EVP_PKEY_cmp(pkey_hex.get(), pkey_raw.get()));
+}
+
+
+
+static void verify_DSA(const DSA* dsa, unsigned psize, unsigned qsize) {
+  const BIGNUM* p = DSA_get0_p(dsa);
+  EXPECT_TRUE(p != NULL);
+  if (p == NULL) {
+    return;
+  }
+  EXPECT_EQ(BN_num_bytes(p), psize);
+  const BIGNUM* q = DSA_get0_q(dsa);
+  EXPECT_TRUE(q != NULL);
+  if (q == NULL) {
+    return;
+  }
+  EXPECT_EQ(BN_num_bytes(q), qsize);
+}
+
+
+TEST_F(EvpPkeyCtxCtrlStrTest, DSAParamGen) {
+
+  {
+    bssl::UniquePtr<EVP_PKEY_CTX> ctx(
+        EVP_PKEY_CTX_new_id(EVP_PKEY_DSA, nullptr));
+    ASSERT_TRUE(ctx);
+    ASSERT_TRUE(EVP_PKEY_paramgen_init(ctx.get()));
+    ASSERT_EQ(EVP_PKEY_CTX_ctrl_str(ctx.get(), "dsa_paramgen_bits", "512"), 1);
+    ASSERT_NE(EVP_PKEY_CTX_ctrl_str(ctx.get(), "dsa_paramgen_bits", "256"), 1);
+    ASSERT_NE(EVP_PKEY_CTX_ctrl_str(ctx.get(), "dsa_paramgen_bits", "a125"), 1);
+    ASSERT_EQ(EVP_PKEY_CTX_ctrl_str(ctx.get(), "dsa_paramgen_md", "SHA1"), 1);
+    ASSERT_NE(EVP_PKEY_CTX_ctrl_str(ctx.get(), "dsa_paramgen_md", "sha123"), 1);
+
+    EVP_PKEY *pkey_raw = NULL;
+    EVP_PKEY_paramgen(ctx.get(), &pkey_raw);
+    bssl::UniquePtr<EVP_PKEY> pkey(pkey_raw);
+    ASSERT_TRUE(pkey);
+
+    DSA *dsa_raw = EVP_PKEY_get0_DSA(pkey_raw);
+    ASSERT_TRUE(dsa_raw != NULL);
+    verify_DSA(dsa_raw, 512 / 8, 160 / 8);
+  }
+
+  {
+    bssl::UniquePtr<EVP_PKEY_CTX> ctx(
+        EVP_PKEY_CTX_new_id(EVP_PKEY_DSA, nullptr));
+    ASSERT_TRUE(ctx);
+    ASSERT_TRUE(EVP_PKEY_paramgen_init(ctx.get()));
+    ASSERT_EQ(EVP_PKEY_CTX_ctrl_str(ctx.get(), "dsa_paramgen_bits", "768"), 1);
+    ASSERT_EQ(EVP_PKEY_CTX_ctrl_str(ctx.get(), "dsa_paramgen_q_bits", "224"), 1);
+    ASSERT_NE(EVP_PKEY_CTX_ctrl_str(ctx.get(), "dsa_paramgen_q_bits", "128"), 1);
+    ASSERT_NE(EVP_PKEY_CTX_ctrl_str(ctx.get(), "dsa_paramgen_q_bits", "aghj"), 1);
+
+    EVP_PKEY *pkey_raw = NULL;
+    EVP_PKEY_paramgen(ctx.get(), &pkey_raw);
+    bssl::UniquePtr<EVP_PKEY> pkey(pkey_raw);
+    ASSERT_TRUE(pkey);
+
+    DSA *dsa_raw = EVP_PKEY_get0_DSA(pkey_raw);
+    ASSERT_TRUE(dsa_raw != NULL);
+    verify_DSA(dsa_raw, 768 / 8, 224 / 8);
+  }
+
+  {
+    bssl::UniquePtr<EVP_PKEY_CTX> ctx(
+        EVP_PKEY_CTX_new_id(EVP_PKEY_DSA, nullptr));
+    ASSERT_TRUE(ctx);
+    ASSERT_TRUE(EVP_PKEY_paramgen_init(ctx.get()));
+    ASSERT_EQ(EVP_PKEY_CTX_ctrl_str(ctx.get(), "dsa_paramgen_bits", "512"), 1);
+    ASSERT_EQ(EVP_PKEY_CTX_ctrl_str(ctx.get(), "dsa_paramgen_q_bits", "160"), 1);
+    // MD takes precedence over qbits
+    ASSERT_EQ(EVP_PKEY_CTX_ctrl_str(ctx.get(), "dsa_paramgen_md", "SHA256"), 1);
+
+    EVP_PKEY *pkey_raw = NULL;
+    EVP_PKEY_paramgen(ctx.get(), &pkey_raw);
+    bssl::UniquePtr<EVP_PKEY> pkey(pkey_raw);
+    ASSERT_TRUE(pkey);
+
+    DSA *dsa_raw = EVP_PKEY_get0_DSA(pkey_raw);
+    ASSERT_TRUE(dsa_raw != NULL);
+    verify_DSA(dsa_raw, 512 / 8, 256 / 8);
+  }
 }

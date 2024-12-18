@@ -63,7 +63,7 @@ if(NOT OPENSSL_NO_ASM)
       set(PERLASM_STYLE linux64le)
     else()
       if(ARCH STREQUAL "x86")
-        set(PERLASM_FLAGS "-fPIC -DOPENSSL_IA32_SSE2")
+        set(PERLASM_FLAGS "-fPIC")
       endif()
       if(APPLE)
         set(PERLASM_STYLE macosx)
@@ -109,7 +109,6 @@ if(NOT OPENSSL_NO_ASM)
         set(PERLASM_STYLE nasm)
       else()
         set(PERLASM_STYLE win32n)
-        set(PERLASM_FLAGS "-DOPENSSL_IA32_SSE2")
       endif()
       find_program(NASM_EXECUTABLE nasm)
       set(CMAKE_ASM_NASM_COMPILER ${NASM_EXECUTABLE})
@@ -141,10 +140,16 @@ if(PERL_EXECUTABLE)
       set(PERLASM_FLAGS "${PERLASM_FLAGS} -DMY_ASSEMBLER_IS_TOO_OLD_FOR_512AVX")
     endif()
 
+    set(PERL_COMMAND "${PERL_EXECUTABLE}")
+    list(APPEND PERL_COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/${src}")
+    list(APPEND PERL_COMMAND "${PERLASM_STYLE}")
+    list(APPEND PERL_COMMAND "${dest}")
+    list(APPEND PERL_COMMAND ${PERLASM_FLAGS})
+
     add_custom_command(
       OUTPUT ${dest}
       COMMAND ${CMAKE_COMMAND} -E make_directory ${dir}
-      COMMAND ${PERL_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/${src} ${PERLASM_STYLE} ${dest} ${PERLASM_FLAGS}
+      COMMAND ${PERL_COMMAND}
       DEPENDS
       ${src}
       ${PROJECT_SOURCE_DIR}/crypto/perlasm/arm-xlate.pl
@@ -324,10 +329,8 @@ if(ENABLE_DILITHIUM)
   set(
     DILITHIUM_SOURCES
 
-    dilithium/dilithium3r3_ref.c
-    dilithium/p_dilithium3.c
-    dilithium/p_dilithium3_asn1.c
-    dilithium/sig_dilithium3.c
+    evp_extra/p_pqdsa_asn1.c
+    dilithium/ml_dsa.c
   )
 endif()
 
@@ -422,6 +425,7 @@ add_library(
   evp_extra/evp_asn1.c
   evp_extra/p_dh.c
   evp_extra/p_dh_asn1.c
+  evp_extra/p_dsa.c
   evp_extra/p_dsa_asn1.c
   evp_extra/p_ec_asn1.c
   evp_extra/p_ed25519_asn1.c
@@ -462,6 +466,8 @@ add_library(
   pem/pem_pkey.c
   pem/pem_x509.c
   pem/pem_xaux.c
+  pkcs7/bio/cipher.c
+  pkcs7/bio/md.c
   pkcs7/pkcs7.c
   pkcs7/pkcs7_asn1.c
   pkcs7/pkcs7_x509.c
@@ -477,7 +483,6 @@ add_library(
   rand_extra/forkunsafe.c
   rand_extra/fuchsia.c
   rand_extra/rand_extra.c
-  rand_extra/pq_custom_randombytes.c
   rand_extra/trusty.c
   rand_extra/windows.c
   rc4/rc4.c
@@ -774,7 +779,7 @@ if(BUILD_TESTING)
     ecdh_extra/ecdh_test.cc
     dh_extra/dh_test.cc
     digest_extra/digest_test.cc
-    dilithium/p_dilithium_test.cc
+    dilithium/p_pqdsa_test.cc
     dsa/dsa_test.cc
     des/des_test.cc
     endian_test.cc
@@ -805,6 +810,7 @@ if(BUILD_TESTING)
     fipsmodule/sha/sha_test.cc
     fipsmodule/sha/sha3_test.cc
     fipsmodule/cpucap/cpu_arm_linux_test.cc
+    fipsmodule/cpucap/cpu_aarch64_dit_test.cc
     fipsmodule/hkdf/hkdf_test.cc
     fipsmodule/sshkdf/sshkdf_test.cc
     hpke/hpke_test.cc
@@ -815,6 +821,8 @@ if(BUILD_TESTING)
     obj/obj_test.cc
     ocsp/ocsp_test.cc
     pem/pem_test.cc
+    pkcs7/bio/bio_cipher_test.cc
+    pkcs7/bio/bio_md_test.cc
     pkcs7/pkcs7_test.cc
     pkcs8/pkcs8_test.cc
     pkcs8/pkcs12_test.cc
@@ -829,6 +837,7 @@ if(BUILD_TESTING)
     stack/stack_test.cc
     siphash/siphash_test.cc
     spake25519/spake25519_test.cc
+    test/file_util.cc
     test/file_test_gtest.cc
     thread_test.cc
     trust_token/trust_token_test.cc

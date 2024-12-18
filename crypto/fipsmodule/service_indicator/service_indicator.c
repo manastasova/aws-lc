@@ -217,6 +217,44 @@ static int is_md_fips_approved_for_verifying(int md_type, int pkey_type) {
   }
 }
 
+// custom_meth_invoked checks whether custom crypto was invoked in the |meth|
+// or |eckey_method| fields for a given |RSA| or |EC_KEY| respectively. For
+// |RSA| keys, custom verify and sign functionality is supported. For |EC_KEY|
+// keys, only custom sign functionality is supported.
+// Returns one if custom crypto was invoked and zero otherwise.
+static int custom_meth_invoked(const EVP_PKEY_CTX *ctx) {
+  const int pkey_type = EVP_PKEY_id(ctx->pkey);
+  switch (pkey_type) {
+    case EVP_PKEY_RSA:
+    case EVP_PKEY_RSA_PSS: {
+      const RSA_METHOD *meth = ctx->pkey->pkey.rsa->meth;
+      // Must be either |EVP_PKEY_OP_VERIFY| or |EVP_PKEY_OP_SIGN|
+      if (ctx->operation == EVP_PKEY_OP_VERIFY) {
+        return meth->verify_raw ? 1 : 0;
+      }
+      if(ctx->operation == EVP_PKEY_OP_SIGN) {
+        // There are cases where custom |sign| functionality may be set but
+        // not |sign_raw|. This check is more conservative and fails if
+        // custom functionality is provided for either function pointer.
+        return (meth->sign || meth->sign_raw) ? 1 : 0;
+      }
+      return 0;  // custom crypto can't be invoked for unsupported ops
+    }
+
+    case EVP_PKEY_EC: {
+      if (ctx->operation == EVP_PKEY_OP_SIGN) {
+        const EC_KEY_METHOD *meth = ctx->pkey->pkey.ec->eckey_method;
+        return (meth->sign || meth->sign_sig) ? 1 : 0;
+      }
+      return 0;
+    }
+
+    default:
+      // custom crypto can't be invoked for unsupported key types
+      return 0;
+  }
+}
+
 static void evp_md_ctx_verify_service_indicator(const EVP_MD_CTX *ctx,
                                                 int rsa_1024_ok,
                                                 int (*md_ok)(int md_type,
@@ -270,15 +308,19 @@ static void evp_md_ctx_verify_service_indicator(const EVP_MD_CTX *ctx,
     // The approved RSA key sizes for signing are key sizes >= 2048 bits and bits % 2 == 0.
     size_t n_bits = RSA_bits(ctx->pctx->pkey->pkey.rsa);
 
-    // Check if the MD type and the RSA key size are approved.
+    // Check if the MD type and the RSA key size are approved. Also checking if
+    // custom operations from |pkey.rsa->meth| were invoked.
     if (md_ok(md_type, pkey_type) &&
-        ((rsa_1024_ok && n_bits == 1024) || (n_bits >= 2048 && n_bits % 2 == 0))) {
+        ((rsa_1024_ok && n_bits == 1024) || (n_bits >= 2048 && n_bits % 2 == 0))
+        && !custom_meth_invoked(pctx)) {
       FIPS_service_indicator_update_state();
     }
   } else if (pkey_type == EVP_PKEY_EC) {
-    // Check if the MD type and the elliptic curve are approved.
+    // Check if the MD type and the elliptic curve are approved. Also checking
+    // if custom operations from |pkey.ec->eckey_method| were invoked.
     int curve_nid = EC_GROUP_get_curve_name(pkey->pkey.ec->group);
-    if (md_ok(md_type, pkey_type) && is_ec_fips_approved(curve_nid)) {
+    if (md_ok(md_type, pkey_type) && is_ec_fips_approved(curve_nid) &&
+        !custom_meth_invoked(pctx)) {
       FIPS_service_indicator_update_state();
     }
   }
@@ -407,6 +449,8 @@ void HKDF_verify_service_indicator(const EVP_MD *evp_md, const uint8_t *salt,
     case NID_sha256:
     case NID_sha384:
     case NID_sha512:
+    case NID_sha512_224:
+    case NID_sha512_256:
       FIPS_service_indicator_update_state();
       break;
     default:
@@ -423,6 +467,8 @@ void HKDFExpand_verify_service_indicator(const EVP_MD *evp_md) {
     case NID_sha256:
     case NID_sha384:
     case NID_sha512:
+    case NID_sha512_224:
+    case NID_sha512_256:
       FIPS_service_indicator_update_state();
       break;
     default:
@@ -450,6 +496,8 @@ void PBKDF2_verify_service_indicator(const EVP_MD *evp_md, size_t password_len,
     case NID_sha256:
     case NID_sha384:
     case NID_sha512:
+    case NID_sha512_224:
+    case NID_sha512_256:
       if (password_len >= 14 && salt_len >= 16 && iterations >= 1000) {
         FIPS_service_indicator_update_state();
       }
@@ -567,7 +615,7 @@ void SSKDF_hmac_verify_service_indicator(const EVP_MD *dgst) {
 //
 // Sourced from NIST SP 800-108r1-upd1 Section 3:  Pseudorandom Function (PRF)
 // https://doi.org/10.6028/NIST.SP.800-108r1-upd1
-void KBKDF_ctr_hmac_verify_service_indicator(const EVP_MD *dgst) {
+void KBKDF_ctr_hmac_verify_service_indicator(const EVP_MD *dgst, size_t secret_len) {
   switch (dgst->type) {
     case NID_sha1:
     case NID_sha224:
@@ -576,7 +624,10 @@ void KBKDF_ctr_hmac_verify_service_indicator(const EVP_MD *dgst) {
     case NID_sha512:
     case NID_sha512_224:
     case NID_sha512_256:
-      FIPS_service_indicator_update_state();
+      // SP 800-131Ar1, Section 8: "The length of the key-derivation key shall be at least 112 bits.” 
+      if (secret_len >= 14) {
+        FIPS_service_indicator_update_state();
+      }
       break;
     default:
       break;

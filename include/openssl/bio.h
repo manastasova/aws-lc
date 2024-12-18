@@ -567,22 +567,26 @@ OPENSSL_EXPORT int BIO_set_fp(BIO *bio, FILE *file, int close_flag);
 
 // BIO_read_filename opens |filename| for reading and sets the result as the
 // |FILE| for |bio|. It returns one on success and zero otherwise. The |FILE|
-// will be closed when |bio| is freed.
+// will be closed when |bio| is freed. On Windows, the file is opened in binary
+// mode.
 OPENSSL_EXPORT int BIO_read_filename(BIO *bio, const char *filename);
 
 // BIO_write_filename opens |filename| for writing and sets the result as the
 // |FILE| for |bio|. It returns one on success and zero otherwise. The |FILE|
-// will be closed when |bio| is freed.
+// will be closed when |bio| is freed. On Windows, the file is opened in binary
+// mode.
 OPENSSL_EXPORT int BIO_write_filename(BIO *bio, const char *filename);
 
 // BIO_append_filename opens |filename| for appending and sets the result as
 // the |FILE| for |bio|. It returns one on success and zero otherwise. The
-// |FILE| will be closed when |bio| is freed.
+// |FILE| will be closed when |bio| is freed. On Windows, the file is opened in
+// binary mode.
 OPENSSL_EXPORT int BIO_append_filename(BIO *bio, const char *filename);
 
 // BIO_rw_filename opens |filename| for reading and writing and sets the result
 // as the |FILE| for |bio|. It returns one on success and zero otherwise. The
-// |FILE| will be closed when |bio| is freed.
+// |FILE| will be closed when |bio| is freed. On Windows, the file is opened in
+// binary mode.
 OPENSSL_EXPORT int BIO_rw_filename(BIO *bio, const char *filename);
 
 // BIO_tell returns the file offset of |bio|, or a negative number on error or
@@ -704,6 +708,11 @@ OPENSSL_EXPORT int BIO_do_connect(BIO *bio);
 // |writebuf2| for |*out2|. It returns one on success and zero on error.
 OPENSSL_EXPORT int BIO_new_bio_pair(BIO **out1, size_t writebuf1, BIO **out2,
                                     size_t writebuf2);
+
+// BIO_destroy_bio_pair destroys the connection between |b| and |b->ptr->peer|.
+// It disconnects both BIOs, resets their state, but does not free their memory.
+// It always returns one to indicate success.
+OPENSSL_EXPORT int BIO_destroy_bio_pair(BIO *b);
 
 // BIO_ctrl_get_read_request returns the number of bytes that the other side of
 // |bio| tried (unsuccessfully) to read.
@@ -932,36 +941,36 @@ OPENSSL_EXPORT int BIO_set_write_buffer_size(BIO *bio, int buffer_size);
 // or change the data in any way.
 #define BIO_FLAGS_MEM_RDONLY 0x200
 
-// These are the 'types' of BIOs
-#define BIO_TYPE_NONE 0
-#define BIO_TYPE_MEM (1 | 0x0400)
-#define BIO_TYPE_FILE (2 | 0x0400)
-#define BIO_TYPE_FD (4 | 0x0400 | 0x0100)
-#define BIO_TYPE_SOCKET (5 | 0x0400 | 0x0100)
-#define BIO_TYPE_NULL (6 | 0x0400)
-#define BIO_TYPE_SSL (7 | 0x0200)
-#define BIO_TYPE_MD (8 | 0x0200)                 // passive filter
-#define BIO_TYPE_BUFFER (9 | 0x0200)             // filter
-#define BIO_TYPE_CIPHER (10 | 0x0200)            // filter
-#define BIO_TYPE_BASE64 (11 | 0x0200)            // filter
-#define BIO_TYPE_CONNECT (12 | 0x0400 | 0x0100)  // socket - connect
-#define BIO_TYPE_ACCEPT (13 | 0x0400 | 0x0100)   // socket for accept
-#define BIO_TYPE_PROXY_CLIENT (14 | 0x0200)      // client proxy BIO
-#define BIO_TYPE_PROXY_SERVER (15 | 0x0200)      // server proxy BIO
-#define BIO_TYPE_NBIO_TEST (16 | 0x0200)         // server proxy BIO
-#define BIO_TYPE_NULL_FILTER (17 | 0x0200)
-#define BIO_TYPE_BER (18 | 0x0200)         // BER -> bin filter
-#define BIO_TYPE_BIO (19 | 0x0400)         // (half a) BIO pair
-#define BIO_TYPE_LINEBUFFER (20 | 0x0200)  // filter
-#define BIO_TYPE_DGRAM (21 | 0x0400 | 0x0100)
-#define BIO_TYPE_ASN1 (22 | 0x0200)  // filter
-#define BIO_TYPE_COMP (23 | 0x0200)  // filter
-
 // BIO_TYPE_DESCRIPTOR denotes that the |BIO| responds to the |BIO_C_SET_FD|
 // (|BIO_set_fd|) and |BIO_C_GET_FD| (|BIO_get_fd|) control hooks.
 #define BIO_TYPE_DESCRIPTOR 0x0100  // socket, fd, connect or accept
 #define BIO_TYPE_FILTER 0x0200
 #define BIO_TYPE_SOURCE_SINK 0x0400
+
+// These are the 'types' of BIOs
+#define BIO_TYPE_NONE 0
+#define BIO_TYPE_MEM (1 | BIO_TYPE_SOURCE_SINK)
+#define BIO_TYPE_FILE (2 | BIO_TYPE_SOURCE_SINK)
+#define BIO_TYPE_FD (4 | BIO_TYPE_SOURCE_SINK | BIO_TYPE_DESCRIPTOR)
+#define BIO_TYPE_SOCKET (5 | BIO_TYPE_SOURCE_SINK | BIO_TYPE_DESCRIPTOR)
+#define BIO_TYPE_NULL (6 | BIO_TYPE_SOURCE_SINK)
+#define BIO_TYPE_SSL (7 | BIO_TYPE_FILTER)
+#define BIO_TYPE_MD (8 | BIO_TYPE_FILTER)
+#define BIO_TYPE_BUFFER (9 | BIO_TYPE_FILTER)
+#define BIO_TYPE_CIPHER (10 | BIO_TYPE_FILTER)
+#define BIO_TYPE_BASE64 (11 | BIO_TYPE_FILTER)
+#define BIO_TYPE_CONNECT (12 | BIO_TYPE_SOURCE_SINK | BIO_TYPE_DESCRIPTOR)
+#define BIO_TYPE_ACCEPT (13 | BIO_TYPE_SOURCE_SINK | BIO_TYPE_DESCRIPTOR)
+#define BIO_TYPE_PROXY_CLIENT (14 | BIO_TYPE_FILTER)
+#define BIO_TYPE_PROXY_SERVER (15 | BIO_TYPE_FILTER)
+#define BIO_TYPE_NBIO_TEST (16 | BIO_TYPE_FILTER)
+#define BIO_TYPE_NULL_FILTER (17 | BIO_TYPE_FILTER)
+#define BIO_TYPE_BER (18 | BIO_TYPE_FILTER)       // BER -> bin filter
+#define BIO_TYPE_BIO (19 | BIO_TYPE_SOURCE_SINK)  // (half a) BIO pair
+#define BIO_TYPE_LINEBUFFER (20 | BIO_TYPE_FILTER)
+#define BIO_TYPE_DGRAM (21 | BIO_TYPE_SOURCE_SINK | BIO_TYPE_DESCRIPTOR)
+#define BIO_TYPE_ASN1 (22 | BIO_TYPE_FILTER)
+#define BIO_TYPE_COMP (23 | BIO_TYPE_FILTER)
 
 // BIO_TYPE_START is the first user-allocated |BIO| type. No pre-defined type,
 // flag bits aside, may exceed this value.

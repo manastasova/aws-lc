@@ -181,6 +181,18 @@ OPENSSL_EXPORT int EVP_PKEY_assign_DH(EVP_PKEY *pkey, DH *key);
 OPENSSL_EXPORT DH *EVP_PKEY_get0_DH(const EVP_PKEY *pkey);
 OPENSSL_EXPORT DH *EVP_PKEY_get1_DH(const EVP_PKEY *pkey);
 
+// EVP_PKEY_CTX_set_dh_paramgen_prime_len sets the length of the DH prime
+// parameter p for DH parameter generation. If this function is not called,
+// the default length of 2048 is used. |pbits| must be greater than or equal
+// to 256. Returns 1 on success, otherwise returns a non-positive value.
+OPENSSL_EXPORT int EVP_PKEY_CTX_set_dh_paramgen_prime_len(EVP_PKEY_CTX *ctx, int pbits);
+
+// EVP_PKEY_CTX_set_dh_paramgen_generator sets the DH generator for DH parameter
+// generation. If this function is not called, the default value of 2 is used.
+// |gen| must be greater than 1. Returns 1 on success, otherwise returns a
+// non-positive value.
+OPENSSL_EXPORT int EVP_PKEY_CTX_set_dh_paramgen_generator(EVP_PKEY_CTX *ctx, int gen);
+
 #define EVP_PKEY_NONE NID_undef
 #define EVP_PKEY_RSA NID_rsaEncryption
 #define EVP_PKEY_RSA_PSS NID_rsassaPss
@@ -192,7 +204,7 @@ OPENSSL_EXPORT DH *EVP_PKEY_get1_DH(const EVP_PKEY *pkey);
 #define EVP_PKEY_DH NID_dhKeyAgreement
 
 #ifdef ENABLE_DILITHIUM
-#define EVP_PKEY_DILITHIUM3 NID_DILITHIUM3_R3
+#define EVP_PKEY_PQDSA NID_PQDSA
 #endif
 
 #define EVP_PKEY_KEM NID_kem
@@ -934,6 +946,26 @@ OPENSSL_EXPORT EVP_PKEY *EVP_PKEY_kem_new_raw_key(int nid,
 // to the secret key in |key|.
 OPENSSL_EXPORT int EVP_PKEY_kem_check_key(EVP_PKEY *key);
 
+// PQDSA specific functions.
+
+#ifdef ENABLE_DILITHIUM
+// EVP_PKEY_CTX_pqdsa_set_params sets in |ctx| the parameters associated with
+// the signature scheme defined by the given |nid|. It returns one on success
+// and zero on error.
+OPENSSL_EXPORT int EVP_PKEY_CTX_pqdsa_set_params(EVP_PKEY_CTX *ctx, int nid);
+
+// EVP_PKEY_pqdsa_new_raw_public_key generates a new EVP_PKEY object of type
+// EVP_PKEY_PQDSA, initializes the PQDSA key based on |nid| and populates the
+// public key part of the PQDSA key with the contents of |in|. It returns the
+// pointer to the allocated PKEY on sucess and NULL on error.
+OPENSSL_EXPORT EVP_PKEY *EVP_PKEY_pqdsa_new_raw_public_key(int nid, const uint8_t *in, size_t len);
+
+// EVP_PKEY_pqdsa_new_raw_private_key generates a new EVP_PKEY object of type
+// EVP_PKEY_PQDSA, initializes the PQDSA key based on |nid| and populates the
+// secret key part of the PQDSA key with the contents of |in|. It returns the
+// pointer to the allocated PKEY on sucess and NULL on error.
+OPENSSL_EXPORT EVP_PKEY *EVP_PKEY_pqdsa_new_raw_private_key(int nid, const uint8_t *in, size_t len);
+#endif
 
 // Diffie-Hellman-specific control functions.
 
@@ -987,6 +1019,45 @@ OPENSSL_EXPORT int EVP_PKEY_asn1_get0_info(int *ppkey_id, int *pkey_base_id,
                                            int *ppkey_flags, const char **pinfo,
                                            const char **ppem_str,
                                            const EVP_PKEY_ASN1_METHOD *ameth);
+
+
+// EVP_PKEY_CTX keygen/paramgen functions.
+
+typedef int EVP_PKEY_gen_cb(EVP_PKEY_CTX *ctx);
+
+// EVP_PKEY_CTX_set_cb sets |cb| as the key or parameter generation callback
+// function for |ctx|. The callback function is then translated and used as the
+// underlying |BN_GENCB| for |ctx|. Once |cb| is set for |ctx|, any information
+// regarding key or parameter generation can be retrieved via
+// |EVP_PKEY_CTX_get_keygen_info|.
+// This behavior only applies to |EVP_PKEY|s that have calls to |BN_GENCB|
+// available, which is only |EVP_PKEY_RSA|.
+//
+// TODO: Add support for |EVP_PKEY_DH| once we have param_gen support.
+OPENSSL_EXPORT void EVP_PKEY_CTX_set_cb(EVP_PKEY_CTX *ctx, EVP_PKEY_gen_cb *cb);
+
+// EVP_PKEY_CTX_get_keygen_info returns the values associated with the
+// |EVP_PKEY_gen_cb|/|BN_GENCB| assigned to |ctx|. This should only be used if
+// |EVP_PKEY_CTX_set_cb| has been called. If |idx| is -1, the total number of
+// available parameters is returned. Any non-negative value less than the total
+// number of available parameters, returns the indexed value in the parameter
+// array. We return 0 for any invalid |idx| or key type.
+//
+// The |idx|s in |ctx->keygen_info| correspond to the following values for
+// |BN_GENCB|:
+//     1. |ctx->keygen_info[0]| -> |event|
+//     2. |ctx->keygen_info[1]| -> |n|
+// See documentation for |BN_GENCB| for more details regarding the definition
+// of each parameter.
+//
+// TODO: Add support for |EVP_PKEY_DH| once we have param_gen support.
+OPENSSL_EXPORT int EVP_PKEY_CTX_get_keygen_info(EVP_PKEY_CTX *ctx, int idx);
+
+// EVP_PKEY_CTX_set_app_data sets |app_data| for |ctx|.
+OPENSSL_EXPORT void EVP_PKEY_CTX_set_app_data(EVP_PKEY_CTX *ctx, void *data);
+
+// EVP_PKEY_CTX_get_app_data returns |ctx|'s |app_data|.
+OPENSSL_EXPORT void *EVP_PKEY_CTX_get_app_data(EVP_PKEY_CTX *ctx);
 
 
 // Deprecated functions.
@@ -1238,19 +1309,28 @@ OPENSSL_EXPORT void OpenSSL_add_all_digests(void);
 OPENSSL_EXPORT OPENSSL_DEPRECATED void EVP_cleanup(void);
 
 
-// EVP_PKEY_DSA No-ops [Deprecated].
+// EVP_PKEY_DSA
 //
-// |EVP_PKEY_DSA| is deprecated. It is currently still possible to parse DER
-// into a DSA |EVP_PKEY|, but signing or verifying with those objects will not
-// work.
+// |EVP_PKEY_DSA| is deprecated, but signing or verifying are still supported,
+// as is parsing DER into a DSA |EVP_PKEY|.
 
 #define EVP_PKEY_DSA NID_dsa
 
-// EVP_PKEY_CTX_set_dsa_paramgen_bits returns zero.
+// EVP_PKEY_CTX_set_dsa_paramgen_bits sets the number of bits for DSA paramgen.
+// |nbits| must be at least 512. Returns 1 on success, 0 otherwise.
 OPENSSL_EXPORT OPENSSL_DEPRECATED int EVP_PKEY_CTX_set_dsa_paramgen_bits(
     EVP_PKEY_CTX *ctx, int nbits);
 
-// EVP_PKEY_CTX_set_dsa_paramgen_q_bits returns zero.
+// EVP_PKEY_CTX_set_dsa_paramgen_md sets the digest function used for DSA
+// parameter generation. If not specified, one of SHA-1 (160), SHA-224 (224),
+// or SHA-256 (256) is selected based on the number of bits in |q|.
+OPENSSL_EXPORT OPENSSL_DEPRECATED int EVP_PKEY_CTX_set_dsa_paramgen_md(EVP_PKEY_CTX *ctx, const EVP_MD* md);
+
+// EVP_PKEY_CTX_set_dsa_paramgen_q_bits sets the number of bits in q to use for
+// DSA parameter generation. If not specified, the default is 256. If a digest
+// function is specified with |EVP_PKEY_CTX_set_dsa_paramgen_md| then this
+// parameter is ignored and the number of bits in q matches the size of the
+// digest. This function only accepts the values 160, 224 or 256 for |qbits|.
 OPENSSL_EXPORT OPENSSL_DEPRECATED int EVP_PKEY_CTX_set_dsa_paramgen_q_bits(
     EVP_PKEY_CTX *ctx, int qbits);
 
@@ -1271,21 +1351,6 @@ OPENSSL_EXPORT OPENSSL_DEPRECATED int EVP_PKEY_CTX_set_dsa_paramgen_q_bits(
 OPENSSL_EXPORT OPENSSL_DEPRECATED int EVP_PKEY_CTX_ctrl_str(EVP_PKEY_CTX *ctx, const char *type,
                               const char *value);
 
-// EVP_PKEY_CTX keygen no-ops [Deprecated].
-
-typedef int EVP_PKEY_gen_cb(EVP_PKEY_CTX *ctx);
-
-// EVP_PKEY_CTX_set_cb is a no-op.
-OPENSSL_EXPORT OPENSSL_DEPRECATED void EVP_PKEY_CTX_set_cb(EVP_PKEY_CTX *ctx, EVP_PKEY_gen_cb *cb);
-
-// EVP_PKEY_CTX_set_app_data is a no-op.
-OPENSSL_EXPORT OPENSSL_DEPRECATED void EVP_PKEY_CTX_set_app_data(EVP_PKEY_CTX *ctx, void *data);
-
-// EVP_PKEY_CTX_get_app_data is a no-op. Return value is |NULL|.
-OPENSSL_EXPORT OPENSSL_DEPRECATED void *EVP_PKEY_CTX_get_app_data(EVP_PKEY_CTX *ctx);
-
-//  EVP_PKEY_CTX_get_keygen_info is a no-op. Return value is 0.
-OPENSSL_EXPORT OPENSSL_DEPRECATED int EVP_PKEY_CTX_get_keygen_info(EVP_PKEY_CTX *ctx, int idx);
 
 // Preprocessor compatibility section (hidden).
 //

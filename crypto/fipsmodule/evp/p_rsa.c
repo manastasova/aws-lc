@@ -558,18 +558,18 @@ static int pkey_rsa_ctrl(EVP_PKEY_CTX *ctx, int type, int p1, void *p2) {
       return 1;
 
     case EVP_PKEY_CTRL_RSA_KEYGEN_PUBEXP:
-#if defined(AWSLC_FIPS)
-      OPENSSL_PUT_ERROR(EVP, EVP_R_INVALID_OPERATION);
-      return 0;
-#else
       if (!p2) {
         return 0;
       }
+#if defined(AWSLC_FIPS)
+      if (BN_get_word(p2) != RSA_F4) {
+        OPENSSL_PUT_ERROR(EVP, EVP_R_INVALID_OPERATION);
+        return 0;
+      }
+#endif
       BN_free(rctx->pub_exp);
       rctx->pub_exp = p2;
       return 1;
-#endif
-
     case EVP_PKEY_CTRL_RSA_OAEP_MD:
     case EVP_PKEY_CTRL_GET_RSA_OAEP_MD:
       if (rctx->pad_mode != RSA_PKCS1_OAEP_PADDING) {
@@ -654,6 +654,7 @@ static int pkey_rsa_keygen(EVP_PKEY_CTX *ctx, EVP_PKEY *pkey) {
   int ret = 0;
   RSA *rsa = NULL;
   RSA_PKEY_CTX *rctx = ctx->data;
+  BN_GENCB *pkey_ctx_cb = NULL;
 
   // In FIPS mode, the public exponent is set within |RSA_generate_key_fips|
   if (!is_fips_build() && !rctx->pub_exp) {
@@ -667,15 +668,24 @@ static int pkey_rsa_keygen(EVP_PKEY_CTX *ctx, EVP_PKEY *pkey) {
     goto end;
   }
 
+  if (ctx->pkey_gencb) {
+    pkey_ctx_cb = BN_GENCB_new();
+    if (pkey_ctx_cb == NULL) {
+      goto end;
+    }
+    evp_pkey_set_cb_translate(pkey_ctx_cb, ctx);
+  }
+
   // In FIPS build, |RSA_generate_key_fips| updates the service indicator so lock it here
   FIPS_service_indicator_lock_state();
-  if ((!is_fips_build() && !RSA_generate_key_ex(rsa, rctx->nbits, rctx->pub_exp, NULL)) ||
-      ( is_fips_build() && !RSA_generate_key_fips(rsa, rctx->nbits, NULL)) ||
+  if ((!is_fips_build() &&
+       !RSA_generate_key_ex(rsa, rctx->nbits, rctx->pub_exp, pkey_ctx_cb)) ||
+      (is_fips_build() &&
+       !RSA_generate_key_fips(rsa, rctx->nbits, pkey_ctx_cb)) ||
       !rsa_set_pss_param(rsa, ctx)) {
     FIPS_service_indicator_unlock_state();
     goto end;
   }
-
   FIPS_service_indicator_unlock_state();
 
   if (pkey_ctx_is_pss(ctx)) {
@@ -683,7 +693,9 @@ static int pkey_rsa_keygen(EVP_PKEY_CTX *ctx, EVP_PKEY *pkey) {
   } else {
     ret = EVP_PKEY_assign_RSA(pkey, rsa);
   }
+
 end:
+  BN_GENCB_free(pkey_ctx_cb);
   if (!ret && rsa) {
     RSA_free(rsa);
   }

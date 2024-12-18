@@ -205,6 +205,10 @@ if((((ARCH STREQUAL "x86_64") AND NOT MY_ASSEMBLER_IS_TOO_OLD_FOR_512AVX) OR
   set(
     S2N_BIGNUM_ASM_SOURCES
 
+    p256/p256_montjscalarmul.S
+    p256/p256_montjscalarmul_alt.S
+    p256/bignum_montinv_p256.S
+
     p384/bignum_add_p384.S
     p384/bignum_sub_p384.S
     p384/bignum_neg_p384.S
@@ -216,6 +220,11 @@ if((((ARCH STREQUAL "x86_64") AND NOT MY_ASSEMBLER_IS_TOO_OLD_FOR_512AVX) OR
     p384/bignum_montsqr_p384_alt.S
     p384/bignum_nonzero_6.S
     p384/bignum_littleendian_6.S
+    p384/p384_montjdouble.S
+    p384/p384_montjdouble_alt.S
+    p384/p384_montjscalarmul.S
+    p384/p384_montjscalarmul_alt.S
+    p384/bignum_montinv_p384.S
 
     p521/bignum_add_p521.S
     p521/bignum_sub_p521.S
@@ -226,6 +235,11 @@ if((((ARCH STREQUAL "x86_64") AND NOT MY_ASSEMBLER_IS_TOO_OLD_FOR_512AVX) OR
     p521/bignum_sqr_p521_alt.S
     p521/bignum_tolebytes_p521.S
     p521/bignum_fromlebytes_p521.S
+    p521/p521_jdouble.S
+    p521/p521_jdouble_alt.S
+    p521/p521_jscalarmul.S
+    p521/p521_jscalarmul_alt.S
+    p521/bignum_inv_p521.S
 
     curve25519/bignum_mod_n25519.S
     curve25519/bignum_neg_p25519.S
@@ -305,14 +319,18 @@ function(s2n_asm_cpreprocess dest src)
 
   string(REGEX REPLACE "[ ]+" ";" CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS}")
 
+  if(BORINGSSL_PREFIX)
+    set(S2N_BIGNUM_PREFIX_INCLUDE "--include=${PROJECT_BINARY_DIR}/symbol_prefix_include/openssl/boringssl_prefix_symbols.h")
+  endif()
+
   add_custom_command(
           OUTPUT ${dest}
           COMMAND ${CMAKE_COMMAND} -E make_directory ${dir}
-          COMMAND ${CMAKE_ASM_COMPILER} ${TARGET} ${CMAKE_ASM_FLAGS} -E ${S2N_BIGNUM_DIR}/${src} -I${S2N_BIGNUM_INCLUDE_DIR} -DS2N_BN_HIDE_SYMBOLS| tr \"\;\" \"\\n\" > ${dest}
+          COMMAND ${CMAKE_ASM_COMPILER} ${TARGET} ${CMAKE_ASM_FLAGS} -E ${S2N_BIGNUM_DIR}/${src} -I${S2N_BIGNUM_INCLUDE_DIR} ${S2N_BIGNUM_PREFIX_INCLUDE} -DS2N_BN_HIDE_SYMBOLS | tr \"\;\" \"\\n\" > ${dest}
           DEPENDS
           ${S2N_BIGNUM_DIR}/${src}
           WORKING_DIRECTORY .
-)
+  )
 endfunction()
 
 if(S2N_BIGNUM_ASM_SOURCES)
