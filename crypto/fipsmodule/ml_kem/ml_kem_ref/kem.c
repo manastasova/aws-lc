@@ -6,7 +6,6 @@
 #include "./indcpa.h"
 #include "./verify.h"
 #include "./reduce.h"
-#include "./symmetric.h"
 #include "../../../internal.h"
 
 #include "openssl/rand.h"
@@ -50,7 +49,7 @@ int crypto_kem_keypair_derand(ml_kem_params *params,
 {
   indcpa_keypair_derand(params, pk, sk, coins);
   memcpy(sk+params->indcpa_secret_key_bytes, pk, params->public_key_bytes);
-  hash_h(sk+params->secret_key_bytes-2*KYBER_SYMBYTES, pk, params->public_key_bytes);
+  SHA3_256(pk, params->public_key_bytes, sk+params->secret_key_bytes-2*KYBER_SYMBYTES);
   /* Value z for pseudo-random output on reject */
   memcpy(sk+params->secret_key_bytes-KYBER_SYMBYTES, coins+KYBER_SYMBYTES, KYBER_SYMBYTES);
 
@@ -204,8 +203,9 @@ static int encapsulation_key_modulus_check(ml_kem_params *params, const uint8_t 
 static int decapsulation_key_hash_check(ml_kem_params *params, const uint8_t *dk) {
   uint8_t dk_pke_hash_computed[KYBER_SYMBYTES] = {0};
 
-  hash_h(dk_pke_hash_computed, &dk[params->indcpa_secret_key_bytes],
-                               params->indcpa_public_key_bytes);
+  SHA3_256(&dk[params->indcpa_secret_key_bytes], params->indcpa_public_key_bytes, 
+                                dk_pke_hash_computed);
+
   const uint8_t *dk_pke_hash_expected = &dk[params->indcpa_secret_key_bytes +
                                             params->indcpa_public_key_bytes];
 
@@ -242,8 +242,8 @@ int crypto_kem_enc_derand(ml_kem_params *params,
   memcpy(buf, coins, KYBER_SYMBYTES);
 
   /* Multitarget countermeasure for coins + contributory KEM */
-  hash_h(buf+KYBER_SYMBYTES, pk, params->public_key_bytes);
-  hash_g(kr, buf, 2*KYBER_SYMBYTES);
+  SHA3_256(pk, params->public_key_bytes, buf+KYBER_SYMBYTES);
+  SHA3_512(buf, 2*KYBER_SYMBYTES, kr);
 
   /* coins are in kr+KYBER_SYMBYTES */
   indcpa_enc(params, ct, buf, pk, kr+KYBER_SYMBYTES);
@@ -321,12 +321,13 @@ int crypto_kem_dec(ml_kem_params *params,
   uint8_t kr[2*KYBER_SYMBYTES];
   uint8_t cmp[KYBER_CIPHERTEXTBYTES_MAX+KYBER_SYMBYTES];
   const uint8_t *pk = sk+params->indcpa_secret_key_bytes;
+  KECCAK1600_CTX ctx;
 
   indcpa_dec(params, buf, ct, sk);
 
   /* Multitarget countermeasure for coins + contributory KEM */
   memcpy(buf+KYBER_SYMBYTES, sk+params->secret_key_bytes-2*KYBER_SYMBYTES, KYBER_SYMBYTES);
-  hash_g(kr, buf, 2*KYBER_SYMBYTES);
+  SHA3_512(buf, 2*KYBER_SYMBYTES, kr);
 
   /* coins are in kr+KYBER_SYMBYTES */
   indcpa_enc(params, cmp, buf, pk, kr+KYBER_SYMBYTES);
@@ -334,7 +335,15 @@ int crypto_kem_dec(ml_kem_params *params,
   fail = verify(ct, cmp, params->ciphertext_bytes);
 
   /* Compute rejection key */
-  rkprf(params, ss,sk+params->secret_key_bytes-KYBER_SYMBYTES,ct);
+  // Return code checks can be omitted
+  // SHAKE_Init always returns 1 when called with correct block size value
+  SHAKE_Init(&ctx, SHAKE256_BLOCKSIZE);
+  // SHAKE_Update always returns 1 on first call of KYBER_SYMBYTES (32 bytes)
+  SHAKE_Update(&ctx, sk+params->secret_key_bytes-KYBER_SYMBYTES, KYBER_SYMBYTES);
+  // SHAKE_Update always returns 1 processing all data blocks that don't need pad
+  SHAKE_Update(&ctx, ct, params->ciphertext_bytes);
+  // SHAKE_Finalize always returns 1 when |ctx->padded| flag is cleared (no previous calls to SHAKE_Finalize)
+  SHAKE_Finalize(ss, &ctx, KYBER_SSBYTES);
 
   /* Copy true key to return buffer if fail is false */
   cmov(ss,kr,KYBER_SYMBYTES,!fail);

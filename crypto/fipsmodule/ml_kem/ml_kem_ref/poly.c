@@ -7,7 +7,6 @@
 #include "ntt.h"
 #include "reduce.h"
 #include "cbd.h"
-#include "symmetric.h"
 
 #include "../../../internal.h"
 
@@ -236,7 +235,15 @@ void poly_tomsg(uint8_t msg[KYBER_INDCPA_MSGBYTES], const poly *a)
 void poly_getnoise_eta1(ml_kem_params *params, poly *r, const uint8_t seed[KYBER_SYMBYTES], uint8_t nonce)
 {
   uint8_t buf[KYBER_ETA1_MAX*KYBER_N/4];
-  prf(buf, sizeof(buf), seed, nonce);
+  uint8_t extkey[KYBER_SYMBYTES+1];
+
+  memcpy(extkey, seed, KYBER_SYMBYTES);
+  extkey[KYBER_SYMBYTES] = nonce;
+
+  // Return code checks can be omitted
+  // SHAKE256 never returns NULL when the internal SHAKE_Init is called with correct block size value
+  SHAKE256(extkey, sizeof(extkey), buf, sizeof(buf));
+
   poly_cbd_eta1(params, r, buf);
 }
 
@@ -255,7 +262,15 @@ void poly_getnoise_eta1(ml_kem_params *params, poly *r, const uint8_t seed[KYBER
 void poly_getnoise_eta2(poly *r, const uint8_t seed[KYBER_SYMBYTES], uint8_t nonce)
 {
   uint8_t buf[KYBER_ETA2*KYBER_N/4];
-  prf(buf, sizeof(buf), seed, nonce);
+  uint8_t extkey[KYBER_SYMBYTES+1];
+
+  memcpy(extkey, seed, KYBER_SYMBYTES);
+  extkey[KYBER_SYMBYTES] = nonce;
+
+  // Return code checks can be omitted
+  // SHAKE256 never returns NULL when the internal SHAKE_Init is called with correct block size value
+  SHAKE256(extkey, sizeof(extkey), buf, sizeof(buf));
+  
   poly_cbd_eta2(r, buf);
 }
 

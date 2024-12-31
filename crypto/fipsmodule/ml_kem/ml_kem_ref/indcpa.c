@@ -9,7 +9,6 @@
 #include "polyvec.h"
 #include "poly.h"
 #include "ntt.h"
-#include "symmetric.h"
 
 /*************************************************
 * Name:        pack_pk
@@ -167,16 +166,25 @@ void gen_matrix(ml_kem_params *params, polyvec *a, const uint8_t seed[KYBER_SYMB
   unsigned int ctr, i, j, k;
   unsigned int buflen, off;
   uint8_t buf[GEN_MATRIX_NBLOCKS*XOF_BLOCKBYTES+2];
+  uint8_t extseed[KYBER_SYMBYTES+2];
   KECCAK1600_CTX ctx;
 
+
+  memcpy(extseed, seed, KYBER_SYMBYTES);
   for(i=0;i<params->k;i++) {
     for(j=0;j<params->k;j++) {
-      if(transposed)
-        xof_absorb(&ctx, seed, i, j);
-      else
-        xof_absorb(&ctx, seed, j, i);
+      if(transposed) {
+          extseed[KYBER_SYMBYTES+0] = i;
+          extseed[KYBER_SYMBYTES+1] = j;
+      }
+      else {
+        extseed[KYBER_SYMBYTES+0] = j;
+        extseed[KYBER_SYMBYTES+1] = i;
+      }
+      SHAKE_Init(&ctx, SHAKE128_BLOCKSIZE);
+      SHAKE_Update(&ctx, extseed, sizeof(extseed));
 
-      xof_squeezeblocks(buf, GEN_MATRIX_NBLOCKS, &ctx);
+      SHAKE_Finalize(buf, &ctx, GEN_MATRIX_NBLOCKS * SHAKE128_BLOCKSIZE);
       buflen = GEN_MATRIX_NBLOCKS*XOF_BLOCKBYTES;
       ctr = rej_uniform(a[i].vec[j].coeffs, KYBER_N, buf, buflen);
 
@@ -184,7 +192,7 @@ void gen_matrix(ml_kem_params *params, polyvec *a, const uint8_t seed[KYBER_SYMB
         off = buflen % 3;
         for(k = 0; k < off; k++)
           buf[k] = buf[buflen - off + k];
-        xof_squeezeblocks(buf + off, 1, &ctx);
+          SHAKE_Squeeze(buf + off, &ctx, SHAKE128_BLOCKSIZE);
         buflen = off + XOF_BLOCKBYTES;
         ctr += rej_uniform(a[i].vec[j].coeffs + ctr, KYBER_N - ctr, buf, buflen);
       }
@@ -224,7 +232,8 @@ void indcpa_keypair_derand(ml_kem_params *params,
   memcpy(coins_with_domain_separator, coins, KYBER_SYMBYTES);
   coins_with_domain_separator[KYBER_SYMBYTES] = params->k;
 
-  hash_g(buf, coins_with_domain_separator, KYBER_SYMBYTES + 1);
+  //hash_g(buf, coins_with_domain_separator, KYBER_SYMBYTES + 1);
+  SHA3_512(coins_with_domain_separator, KYBER_SYMBYTES + 1, buf);
 
   gen_a(params, a, publicseed);
 

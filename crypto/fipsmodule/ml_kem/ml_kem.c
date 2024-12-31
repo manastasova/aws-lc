@@ -14,7 +14,6 @@
 #include "./ml_kem_ref/poly.c"
 #include "./ml_kem_ref/polyvec.c"
 #include "./ml_kem_ref/reduce.c"
-#include "./ml_kem_ref/symmetric-shake.c"
 #include "./ml_kem_ref/verify.c"
 #include "../../internal.h"
 
