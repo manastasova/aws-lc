@@ -182,9 +182,9 @@ void gen_matrix(ml_kem_params *params, polyvec *a, const uint8_t seed[KYBER_SYMB
         extseed[KYBER_SYMBYTES+1] = i;
       }
       SHAKE_Init(&ctx, SHAKE128_BLOCKSIZE);
-      SHAKE_Update(&ctx, extseed, sizeof(extseed));
+      SHAKE_Absorb(&ctx, extseed, sizeof(extseed));
 
-      SHAKE_Finalize(buf, &ctx, GEN_MATRIX_NBLOCKS * SHAKE128_BLOCKSIZE);
+      SHAKE_Squeeze(buf, &ctx, GEN_MATRIX_NBLOCKS * SHAKE128_BLOCKSIZE);
       buflen = GEN_MATRIX_NBLOCKS*XOF_BLOCKBYTES;
       ctr = rej_uniform(a[i].vec[j].coeffs, KYBER_N, buf, buflen);
 

@@ -338,12 +338,12 @@ int crypto_kem_dec(ml_kem_params *params,
   // Return code checks can be omitted
   // SHAKE_Init always returns 1 when called with correct block size value
   SHAKE_Init(&ctx, SHAKE256_BLOCKSIZE);
-  // SHAKE_Update always returns 1 on first call of KYBER_SYMBYTES (32 bytes)
-  SHAKE_Update(&ctx, sk+params->secret_key_bytes-KYBER_SYMBYTES, KYBER_SYMBYTES);
-  // SHAKE_Update always returns 1 processing all data blocks that don't need pad
-  SHAKE_Update(&ctx, ct, params->ciphertext_bytes);
-  // SHAKE_Finalize always returns 1 when |ctx->padded| flag is cleared (no previous calls to SHAKE_Finalize)
-  SHAKE_Finalize(ss, &ctx, KYBER_SSBYTES);
+  // SHAKE_Absorb always returns 1 on first call of KYBER_SYMBYTES (32 bytes)
+  SHAKE_Absorb(&ctx, sk+params->secret_key_bytes-KYBER_SYMBYTES, KYBER_SYMBYTES);
+  // SHAKE_Absorb always returns 1 processing all data blocks that don't need pad
+  SHAKE_Absorb(&ctx, ct, params->ciphertext_bytes);
+  // SHAKE_Squeeze always returns 1 when |ctx->padded| flag is cleared (no previous calls to SHAKE_Squeeze)
+  SHAKE_Squeeze(ss, &ctx, KYBER_SSBYTES);
 
   /* Copy true key to return buffer if fail is false */
   cmov(ss,kr,KYBER_SYMBYTES,!fail);
