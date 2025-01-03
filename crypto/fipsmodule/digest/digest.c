@@ -144,7 +144,7 @@ int EVP_DigestFinalXOF(EVP_MD_CTX *ctx, uint8_t *out, size_t len) {
     return 0;
   }
   ctx->digest->finalXOF(ctx, out, len);
-  EVP_MD_CTX_cleanse(ctx);
+  //EVP_MD_CTX_cleanse(ctx);
   return 1;
 }
 

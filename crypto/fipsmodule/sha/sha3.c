@@ -82,8 +82,8 @@ uint8_t *SHAKE128(const uint8_t *data, const size_t in_len, uint8_t *out, size_t
   FIPS_service_indicator_lock_state();
   KECCAK1600_CTX ctx;
   int ok = (SHAKE_Init(&ctx, SHAKE128_BLOCKSIZE) &&
-            SHAKE_Update(&ctx, data, in_len) &&
-            SHAKE_Finalize(out, &ctx, out_len));
+            SHAKE_Absorb(&ctx, data, in_len) &&
+            SHAKE_Squeeze(out, &ctx, out_len));
 
   OPENSSL_cleanse(&ctx, sizeof(ctx));
   FIPS_service_indicator_unlock_state();
@@ -98,8 +98,8 @@ uint8_t *SHAKE256(const uint8_t *data, const size_t in_len, uint8_t *out, size_t
   FIPS_service_indicator_lock_state();
   KECCAK1600_CTX ctx;
   int ok = (SHAKE_Init(&ctx, SHAKE256_BLOCKSIZE) &&
-            SHAKE_Update(&ctx, data, in_len) &&
-            SHAKE_Finalize(out, &ctx, out_len));
+            SHAKE_Absorb(&ctx, data, in_len) &&
+            SHAKE_Squeeze(out, &ctx, out_len));
   OPENSSL_cleanse(&ctx, sizeof(ctx));
   FIPS_service_indicator_unlock_state();
   if (ok == 0) {
@@ -185,19 +185,21 @@ int FIPS202_Finalize(uint8_t *md, KECCAK1600_CTX *ctx) {
   size_t block_size = ctx->block_size;
   size_t num = ctx->buf_load;
 
-  if (ctx->padded == 1) {
-    return 0;
-  }
+  if (ctx->padded == 0) {
+    // Pad the data with 10*1. Note that |num| can be |block_size - 1|
+    // in which case both byte operations below are performed on
+    // the same byte.
+    memset(ctx->buf + num, 0, block_size - num);
+    ctx->buf[num] = ctx->pad;
+    ctx->buf[block_size - 1] |= 0x80;
 
-  // Pad the data with 10*1. Note that |num| can be |block_size - 1|
-  // in which case both byte operations below are performed on
-  // the same byte.
-  memset(ctx->buf + num, 0, block_size - num);
-  ctx->buf[num] = ctx->pad;
-  ctx->buf[block_size - 1] |= 0x80;
+    if (Keccak1600_Absorb(ctx->A, ctx->buf, block_size, block_size) != 0) {
+      return 0;
+    }
 
-  if (Keccak1600_Absorb(ctx->A, ctx->buf, block_size, block_size) != 0) {
-    return 0;
+    // |ctx->buf| input buffer is emptied during the last call to Keccak1600_Absorb
+    // |ctx->buf| is reused as output buffer during incremental SHAKE_Squeeze calls
+    ctx->buf_load = 0;
   }
 
   return 1;
@@ -254,7 +256,7 @@ int SHAKE_Init(KECCAK1600_CTX *ctx, size_t block_size) {
   return 0;
 }
 
-int SHAKE_Update(KECCAK1600_CTX *ctx, const void *data, size_t len) {
+int SHAKE_Absorb(KECCAK1600_CTX *ctx, const void *data, size_t len) {
   if (ctx == NULL) {
     return 0;
   }
@@ -266,11 +268,13 @@ int SHAKE_Update(KECCAK1600_CTX *ctx, const void *data, size_t len) {
   return FIPS202_Update(ctx, data, len);
 }
 
-// SHAKE_Finalize should be called once to finalize absorb and initiate squeeze phase
-// |ctx->padded| restricts consecutive calls to FIPS202_Finalize
-// Function SHAKE_Squeeze should be used for incremental XOF output
-int SHAKE_Finalize(uint8_t *md, KECCAK1600_CTX *ctx, size_t len) {
+// SHAKE_Squeeze can be called multiple times after SHAKE_Squeeze
+// SHAKE_Squeeze should be called for incremental XOF output
+// |ctx->padded| flag should be set by SHAKE_Squeeze function
+int SHAKE_Squeeze(uint8_t *md, KECCAK1600_CTX *ctx, size_t len) {
+  size_t block_bytes;
   ctx->md_size = len;
+
   if (ctx->md_size == 0) {
     return 1;
   }
@@ -279,22 +283,50 @@ int SHAKE_Finalize(uint8_t *md, KECCAK1600_CTX *ctx, size_t len) {
     return 0;
   }
 
-  Keccak1600_Squeeze(ctx->A, md, ctx->md_size, ctx->block_size, ctx->padded);
-  ctx->padded = 1;
-
-  FIPS_service_indicator_update_state();
-
-  return 1;
-}
-
-// SHAKE_Squeeze can be called multiple times after SHAKE_Finalize
-// SHAKE_Squeeze should be called for incremental XOF output
-// |ctx->padded| flag should be set by SHAKE_Finalize function
-int SHAKE_Squeeze(uint8_t *md, KECCAK1600_CTX *ctx, size_t len) {
-  if (ctx->padded == 0) {
-    return 0;
+  // Process previous data from output buffer if any
+  if (ctx->buf_load != 0) {
+    if (len <= ctx->buf_load) {
+      memcpy(md, ctx->buf + ctx->block_size - ctx->buf_load, len);
+      md += len;
+      len = 0;
+      ctx->buf_load -= len;
+      return 1;
+    } else {
+      memcpy(md, ctx->buf + ctx->block_size - ctx->buf_load, ctx->buf_load);
+      md += ctx->buf_load;
+      len -= ctx->buf_load;
+      ctx->buf_load = 0;
+    }
   }
 
-  Keccak1600_Squeeze(ctx->A, md, len, ctx->block_size, ctx->padded);
+  // Use a single function to finalize SHAKE absorb phase and to generate 
+  // incremental SHAKE_Squeeze extendable output. It allows consistency with the current
+  // single XOF function in the Digest EVP_MD |env_md_st->finalXOF| and 
+  // EVP_DigestFinalXOF external APIs
+
+  // Process all full size output requested blocks
+  block_bytes = ctx->block_size * (len / ctx->block_size);
+  if (len > ctx->block_size) {
+    Keccak1600_Squeeze(ctx->A, md, block_bytes, ctx->block_size, ctx->padded);
+    md += block_bytes;
+    len -= block_bytes;
+    ctx->padded = 1;
+  }
+
+  if (len > 0) {
+    // Process an additional block if output length is not a multiple of block size. 
+    // Generated output is store in |ctx->buf|. Only requested bytes are transfered
+    // to the output. The 'unused' output data is kept for processing in a sequenctual
+    // call to SHAKE_Squeeze (incremental byte-wise SHAKE_Squeeze)
+    Keccak1600_Squeeze(ctx->A, ctx->buf, ctx->block_size, ctx->block_size, ctx->padded);
+    memcpy(md, ctx->buf, len);
+    ctx->buf_load = ctx->block_size - len; // how much there is still in buffer to be consumed    
+    md += len;
+  }
+
+  ctx->padded = 1;
+
+  // Each incremental call to SHAKE_Squeeze updates the |service_indicator|
+  FIPS_service_indicator_update_state();
   return 1;
 }
