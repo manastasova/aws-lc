@@ -192,7 +192,7 @@ void gen_matrix(ml_kem_params *params, polyvec *a, const uint8_t seed[KYBER_SYMB
         off = buflen % 3;
         for(k = 0; k < off; k++)
           buf[k] = buf[buflen - off + k];
-          SHAKE_Squeeze(buf + off, &ctx, SHAKE128_BLOCKSIZE);
+        SHAKE_Squeeze(buf + off, &ctx, SHAKE128_BLOCKSIZE);
         buflen = off + XOF_BLOCKBYTES;
         ctr += rej_uniform(a[i].vec[j].coeffs + ctr, KYBER_N - ctr, buf, buflen);
       }
