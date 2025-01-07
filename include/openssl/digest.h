@@ -294,6 +294,11 @@ OPENSSL_EXPORT void EVP_MD_CTX_destroy(EVP_MD_CTX *ctx);
 OPENSSL_EXPORT int EVP_DigestFinalXOF(EVP_MD_CTX *ctx, uint8_t *out,
                                       size_t len);
 
+// EVP_DigestSqueeze allows incremental squeezes for XOF digests, writing
+// |len| bytes of extended output to |out|. It can be called mutliple times.
+OPENSSL_EXPORT int EVP_DigestSqueeze(EVP_MD_CTX *ctx, uint8_t *out,
+                                      size_t len);
+
 // EVP_MD_meth_get_flags calls |EVP_MD_flags|.
 OPENSSL_EXPORT uint32_t EVP_MD_meth_get_flags(const EVP_MD *md);
 

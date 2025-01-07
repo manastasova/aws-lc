@@ -120,6 +120,7 @@ void EVP_MD_CTX_cleanse(EVP_MD_CTX *ctx) {
   if (ctx == NULL || ctx->md_data == NULL || ctx->digest == NULL) {
     return;
   }
+
   OPENSSL_cleanse(ctx->md_data, ctx->digest->ctx_size);
   EVP_MD_CTX_cleanup(ctx);
 }
@@ -135,16 +136,36 @@ void EVP_MD_CTX_free(EVP_MD_CTX *ctx) {
 
 void EVP_MD_CTX_destroy(EVP_MD_CTX *ctx) { EVP_MD_CTX_free(ctx); }
 
+// EVP_DigestFinalXOF can be called only once to process arbitrary output length (in bytes)
+// For incremental output generation, |EVP_DigestSqueeze| should be used
 int EVP_DigestFinalXOF(EVP_MD_CTX *ctx, uint8_t *out, size_t len) {
   if (ctx->digest == NULL) {
     return 0;
   }
+
   if ((EVP_MD_flags(ctx->digest) & EVP_MD_FLAG_XOF) == 0) {
     OPENSSL_PUT_ERROR(DIGEST, ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
     return 0;
   }
+
   ctx->digest->finalXOF(ctx, out, len);
   EVP_MD_CTX_cleanse(ctx);
+  return 1;
+}
+
+// EVP_DigestSqueeze can be called multiple time to incrementally generate output length
+int EVP_DigestSqueeze(EVP_MD_CTX *ctx, uint8_t *out, size_t len)
+{
+  if (ctx->digest == NULL) {
+      return 0;
+  }
+
+  if ((EVP_MD_flags(ctx->digest) & EVP_MD_FLAG_XOF) == 0) {
+    OPENSSL_PUT_ERROR(DIGEST, ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
+    return 0;
+  }
+
+  ctx->digest->squeezeXOF(ctx, out, len);
   return 1;
 }
 
