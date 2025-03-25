@@ -394,7 +394,23 @@ void Keccak1600_Squeeze(uint64_t A[KECCAK1600_ROWS][KECCAK1600_ROWS], uint8_t *o
     }
 }
 
-#else
+#elif !defined(OPENSSL_NO_ASM) && defined(OPENSSL_X86_64)
+
+size_t Keccak1600_Absorb_x86_hw(uint64_t A[KECCAK1600_ROWS][KECCAK1600_ROWS], const uint8_t *inp, size_t len,
+                size_t r);
+
+size_t Keccak1600_Absorb(uint64_t A[KECCAK1600_ROWS][KECCAK1600_ROWS], const uint8_t *inp, size_t len,
+                size_t r) {
+    return Keccak1600_Absorb_x86_hw(A, inp, len, r);
+}
+void Keccak1600_Squeeze_x86_hw(uint64_t A[KECCAK1600_ROWS][KECCAK1600_ROWS], const uint8_t *out, size_t len,
+                size_t r, int padded);
+
+void Keccak1600_Squeeze(uint64_t A[KECCAK1600_ROWS][KECCAK1600_ROWS], uint8_t *out, size_t len, size_t r, int padded) {
+                Keccak1600_Squeeze_x86_hw(A, out, len, r, padded);
+}
+
+#elif !defined(OPENSSL_NO_ASM) && defined(OPENSSL_AARCH64)
 
 size_t Keccak1600_Absorb_hw(uint64_t A[KECCAK1600_ROWS][KECCAK1600_ROWS], const uint8_t *inp, size_t len,
                        size_t r);

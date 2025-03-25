@@ -327,6 +327,10 @@ void sha512_block_data_order_nohw(uint64_t state[8], const uint8_t *data,
 #define KECCAK1600_ASM
 #endif
 
+#if !defined(OPENSSL_NO_ASM) && defined(OPENSSL_X86_64)
+#define KECCAK1600_ASM
+#endif
+
 // SHAx_Init_from_state is a low-level function that initializes |sha| with a
 // custom state. |h| is the hash state in big endian. |n| is the number of bits
 // processed at this point. It must be a multiple of |SHAy_CBLOCK*8|,
