@@ -338,7 +338,7 @@ void sha512_block_data_order_nohw(uint64_t state[8], const uint8_t *data,
                                   size_t num);
 #endif
 
-#if !defined(OPENSSL_NO_ASM) && defined(OPENSSL_AARCH64)
+#if !defined(OPENSSL_NO_ASM) && (defined(OPENSSL_AARCH64) || defined(OPENSSL_X86_64))
 #define KECCAK1600_ASM
 #endif
 

@@ -1,0 +1,478 @@
+// Copyright (c) 2024 The mlkem-native project authors
+// Copyright (c) 2021-2022 Arm Limited
+// Copyright (c) 2022 Matthias Kannwischer
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR ISC OR MIT
+
+// ----------------------------------------------------------------------------
+// Keccak-f1600 permutation for SHA3
+// Input a[25], rc[24]; output a[25]
+//
+// Thinking of the input/output array a as a row-major flattening of a
+// 5x5 matrix of 64-bit words, this performs the Keccak-f1600 permutation,
+// all 24 rounds with the distinct round constants rc[i] for each one. For
+// correct operation, the input pointer rc should point at the standard
+// round constants as in the specification:
+//
+//   https://keccak.team/keccak_specs_summary.html#roundConstants
+//
+// This operation is at the core of SHA3 and is fully specified here:
+//
+//   https://keccak.team/files/Keccak-reference-3.0.pdf
+//
+// extern void sha3_keccak_f1600(uint64_t a[25],const uint64_t rc[24]);
+//
+// Standard ARM ABI: X0 = a, X1 = rc
+// ----------------------------------------------------------------------------
+#include "_internal_s2n_bignum.h"
+
+        S2N_BN_SYM_VISIBILITY_DIRECTIVE(sha3_keccak_f1600)
+        S2N_BN_SYM_PRIVACY_DIRECTIVE(sha3_keccak_f1600)
+        .text
+
+// This is almost exactly the same as the scalar code in the mlkem-native
+// repository here:
+//
+// https://github.com/pq-code-package/mlkem-native/blob/main/mlkem/fips202/native/aarch64/src/keccak_f1600_x1_scalar_asm.S
+//
+// The only change is the use of simple 64-bit addressing in place of
+// the unnecessary down-and-upcasting arising from [x9, w25, uxtw #3]
+
+S2N_BN_SYMBOL(sha3_keccak_f1600):
+        push   %rbx
+        push   %rbp
+        push   %r12
+        push   %r13
+        push   %r14
+        push   %r15
+        mov    %rsi,%r15
+        sub    $0xd0,%rsp
+        notq   0x8(%rdi)
+        notq   0x10(%rdi)
+        notq   0x40(%rdi)
+        notq   0x60(%rdi)
+        notq   0x88(%rdi)
+        notq   0xa0(%rdi)
+        lea    (%rsp),%rsi
+        mov    0xa0(%rdi),%rax
+        mov    0xa8(%rdi),%rbx
+        mov    0xb0(%rdi),%rcx
+        mov    0xb8(%rdi),%rdx
+        mov    0xc0(%rdi),%rbp
+        mov    $0x0,%r8
+
+        loop_keccak:
+        mov    %r8,0xc8(%rsp)
+        mov    (%rdi),%r8
+        mov    0x30(%rdi),%r9
+        mov    0x60(%rdi),%r10
+        mov    0x90(%rdi),%r11
+        xor    0x10(%rdi),%rcx
+        xor    0x18(%rdi),%rdx
+        xor    %r8,%rax
+        xor    0x8(%rdi),%rbx
+        xor    0x38(%rdi),%rcx
+        xor    0x28(%rdi),%rax
+        mov    %rbp,%r12
+        xor    0x20(%rdi),%rbp
+        xor    %r10,%rcx
+        xor    0x50(%rdi),%rax
+        xor    0x40(%rdi),%rdx
+        xor    %r9,%rbx
+        xor    0x48(%rdi),%rbp
+        xor    0x88(%rdi),%rcx
+        xor    0x78(%rdi),%rax
+        xor    0x68(%rdi),%rdx
+        xor    0x58(%rdi),%rbx
+        xor    0x70(%rdi),%rbp
+        mov    %rcx,%r13
+        rol    $1,%rcx
+        xor    %rax,%rcx
+        xor    %r11,%rdx
+        rol    $1,%rax
+        xor    %rdx,%rax
+        xor    0x80(%rdi),%rbx
+        rol    $1,%rdx
+        xor    %rbx,%rdx
+        xor    0x98(%rdi),%rbp
+        rol    $1,%rbx
+        xor    %rbp,%rbx
+        rol    $1,%rbp
+        xor    %r13,%rbp
+        xor    %rcx,%r9
+        xor    %rdx,%r10
+        rol    $0x2c,%r9
+        xor    %rbp,%r11
+        xor    %rax,%r12
+        rol    $0x2b,%r10
+        xor    %rbx,%r8
+        mov    %r9,%r13
+        rol    $0x15,%r11
+        or     %r10,%r9
+        xor    %r8,%r9
+        rol    $0xe,%r12
+        xor    (%r15),%r9
+        mov    %r12,%r14
+        and    %r11,%r12
+        mov    %r9,(%rsi)
+        xor    %r10,%r12
+        not    %r10
+        mov    %r12,0x10(%rsi)
+        or     %r11,%r10
+        mov    0xb0(%rdi),%r12
+        xor    %r13,%r10
+        mov    %r10,0x8(%rsi)
+        and    %r8,%r13
+        mov    0x48(%rdi),%r9
+        xor    %r14,%r13
+        mov    0x50(%rdi),%r10
+        mov    %r13,0x20(%rsi)
+        or     %r8,%r14
+        mov    0x18(%rdi),%r8
+        xor    %r11,%r14
+        mov    0x80(%rdi),%r11
+        mov    %r14,0x18(%rsi)
+        xor    %rbp,%r8
+        xor    %rdx,%r12
+        rol    $0x1c,%r8
+        xor    %rcx,%r11
+        xor    %rax,%r9
+        rol    $0x3d,%r12
+        rol    $0x2d,%r11
+        xor    %rbx,%r10
+        rol    $0x14,%r9
+        mov    %r8,%r13
+        or     %r12,%r8
+        rol    $0x3,%r10
+        xor    %r11,%r8
+        mov    %r8,0x40(%rsi)
+        mov    %r9,%r14
+        and    %r13,%r9
+        mov    0x8(%rdi),%r8
+        xor    %r12,%r9
+        not    %r12
+        mov    %r9,0x48(%rsi)
+        or     %r11,%r12
+        mov    0x38(%rdi),%r9
+        xor    %r10,%r12
+        mov    %r12,0x38(%rsi)
+        and    %r10,%r11
+        mov    0xa0(%rdi),%r12
+        xor    %r14,%r11
+        mov    %r11,0x30(%rsi)
+        or     %r10,%r14
+        mov    0x68(%rdi),%r10
+        xor    %r13,%r14
+        mov    0x98(%rdi),%r11
+        mov    %r14,0x28(%rsi)
+        xor    %rbp,%r10
+        xor    %rax,%r11
+        rol    $0x19,%r10
+        xor    %rdx,%r9
+        rol    $0x8,%r11
+        xor    %rbx,%r12
+        rol    $0x6,%r9
+        xor    %rcx,%r8
+        rol    $0x12,%r12
+        mov    %r10,%r13
+        and    %r11,%r10
+        rol    $1,%r8
+        not    %r11
+        xor    %r9,%r10
+        mov    %r10,0x58(%rsi)
+        mov    %r12,%r14
+        and    %r11,%r12
+        mov    0x58(%rdi),%r10
+        xor    %r13,%r12
+        mov    %r12,0x60(%rsi)
+        or     %r9,%r13
+        mov    0xb8(%rdi),%r12
+        xor    %r8,%r13
+        mov    %r13,0x50(%rsi)
+        and    %r8,%r9
+        xor    %r14,%r9
+        mov    %r9,0x70(%rsi)
+        or     %r8,%r14
+        mov    0x28(%rdi),%r9
+        xor    %r11,%r14
+        mov    0x88(%rdi),%r11
+        mov    %r14,0x68(%rsi)
+        mov    0x20(%rdi),%r8
+        xor    %rcx,%r10
+        xor    %rdx,%r11
+        rol    $0xa,%r10
+        xor    %rbx,%r9
+        rol    $0xf,%r11
+        xor    %rbp,%r12
+        rol    $0x24,%r9
+        xor    %rax,%r8
+        rol    $0x38,%r12
+        mov    %r10,%r13
+        or     %r11,%r10
+        rol    $0x1b,%r8
+        not    %r11
+        xor    %r9,%r10
+        mov    %r10,0x80(%rsi)
+        mov    %r12,%r14
+        or     %r11,%r12
+        xor    %r13,%r12
+        mov    %r12,0x88(%rsi)
+        and    %r9,%r13
+        xor    %r8,%r13
+        mov    %r13,0x78(%rsi)
+        or     %r8,%r9
+        xor    %r14,%r9
+        mov    %r9,0x98(%rsi)
+        and    %r14,%r8
+        xor    %r11,%r8
+        mov    %r8,0x90(%rsi)
+        xor    0x10(%rdi),%rdx
+        xor    0x40(%rdi),%rbp
+        rol    $0x3e,%rdx
+        xor    0xa8(%rdi),%rcx
+        rol    $0x37,%rbp
+        xor    0x70(%rdi),%rax
+        rol    $0x2,%rcx
+        xor    0x78(%rdi),%rbx
+        xchg   %rsi,%rdi
+        rol    $0x27,%rax
+        rol    $0x29,%rbx
+        mov    %rdx,%r13
+        and    %rbp,%rdx
+        not    %rbp
+        xor    %rcx,%rdx
+        mov    %rdx,0xc0(%rdi)
+        mov    %rax,%r14
+        and    %rbp,%rax
+        xor    %r13,%rax
+        mov    %rax,0xa0(%rdi)
+        or     %rcx,%r13
+        xor    %rbx,%r13
+        mov    %r13,0xb8(%rdi)
+        and    %rbx,%rcx
+        xor    %r14,%rcx
+        mov    %rcx,0xb0(%rdi)
+        or     %r14,%rbx
+        xor    %rbp,%rbx
+        mov    %rbx,0xa8(%rdi)
+        mov    %rdx,%rbp
+        mov    %r13,%rdx
+        lea    0x8(%r15),%r15
+        mov    (%rdi),%r8
+        mov    0x30(%rdi),%r9
+        mov    0x60(%rdi),%r10
+        mov    0x90(%rdi),%r11
+        xor    0x10(%rdi),%rcx
+        xor    0x18(%rdi),%rdx
+        xor    %r8,%rax
+        xor    0x8(%rdi),%rbx
+        xor    0x38(%rdi),%rcx
+        xor    0x28(%rdi),%rax
+        mov    %rbp,%r12
+        xor    0x20(%rdi),%rbp
+        xor    %r10,%rcx
+        xor    0x50(%rdi),%rax
+        xor    0x40(%rdi),%rdx
+        xor    %r9,%rbx
+        xor    0x48(%rdi),%rbp
+        xor    0x88(%rdi),%rcx
+        xor    0x78(%rdi),%rax
+        xor    0x68(%rdi),%rdx
+        xor    0x58(%rdi),%rbx
+        xor    0x70(%rdi),%rbp
+        mov    %rcx,%r13
+        rol    $1,%rcx
+        xor    %rax,%rcx
+        xor    %r11,%rdx
+        rol    $1,%rax
+        xor    %rdx,%rax
+        xor    0x80(%rdi),%rbx
+        rol    $1,%rdx
+        xor    %rbx,%rdx
+        xor    0x98(%rdi),%rbp
+        rol    $1,%rbx
+        xor    %rbp,%rbx
+        rol    $1,%rbp
+        xor    %r13,%rbp
+        xor    %rcx,%r9
+        xor    %rdx,%r10
+        rol    $0x2c,%r9
+        xor    %rbp,%r11
+        xor    %rax,%r12
+        rol    $0x2b,%r10
+        xor    %rbx,%r8
+        mov    %r9,%r13
+        rol    $0x15,%r11
+        or     %r10,%r9
+        xor    %r8,%r9
+        rol    $0xe,%r12
+        xor    (%r15),%r9
+        mov    %r12,%r14
+        and    %r11,%r12
+        mov    %r9,(%rsi)
+        xor    %r10,%r12
+        not    %r10
+        mov    %r12,0x10(%rsi)
+        or     %r11,%r10
+        mov    0xb0(%rdi),%r12
+        xor    %r13,%r10
+        mov    %r10,0x8(%rsi)
+        and    %r8,%r13
+        mov    0x48(%rdi),%r9
+        xor    %r14,%r13
+        mov    0x50(%rdi),%r10
+        mov    %r13,0x20(%rsi)
+        or     %r8,%r14
+        mov    0x18(%rdi),%r8
+        xor    %r11,%r14
+        mov    0x80(%rdi),%r11
+        mov    %r14,0x18(%rsi)
+        xor    %rbp,%r8
+        xor    %rdx,%r12
+        rol    $0x1c,%r8
+        xor    %rcx,%r11
+        xor    %rax,%r9
+        rol    $0x3d,%r12
+        rol    $0x2d,%r11
+        xor    %rbx,%r10
+        rol    $0x14,%r9
+        mov    %r8,%r13
+        or     %r12,%r8
+        rol    $0x3,%r10
+        xor    %r11,%r8
+        mov    %r8,0x40(%rsi)
+        mov    %r9,%r14
+        and    %r13,%r9
+        mov    0x8(%rdi),%r8
+        xor    %r12,%r9
+        not    %r12
+        mov    %r9,0x48(%rsi)
+        or     %r11,%r12
+        mov    0x38(%rdi),%r9
+        xor    %r10,%r12
+        mov    %r12,0x38(%rsi)
+        and    %r10,%r11
+        mov    0xa0(%rdi),%r12
+        xor    %r14,%r11
+        mov    %r11,0x30(%rsi)
+        or     %r10,%r14
+        mov    0x68(%rdi),%r10
+        xor    %r13,%r14
+        mov    0x98(%rdi),%r11
+        mov    %r14,0x28(%rsi)
+        xor    %rbp,%r10
+        xor    %rax,%r11
+        rol    $0x19,%r10
+        xor    %rdx,%r9
+        rol    $0x8,%r11
+        xor    %rbx,%r12
+        rol    $0x6,%r9
+        xor    %rcx,%r8
+        rol    $0x12,%r12
+        mov    %r10,%r13
+        and    %r11,%r10
+        rol    $1,%r8
+        not    %r11
+        xor    %r9,%r10
+        mov    %r10,0x58(%rsi)
+        mov    %r12,%r14
+        and    %r11,%r12
+        mov    0x58(%rdi),%r10
+        xor    %r13,%r12
+        mov    %r12,0x60(%rsi)
+        or     %r9,%r13
+        mov    0xb8(%rdi),%r12
+        xor    %r8,%r13
+        mov    %r13,0x50(%rsi)
+        and    %r8,%r9
+        xor    %r14,%r9
+        mov    %r9,0x70(%rsi)
+        or     %r8,%r14
+        mov    0x28(%rdi),%r9
+        xor    %r11,%r14
+        mov    0x88(%rdi),%r11
+        mov    %r14,0x68(%rsi)
+        mov    0x20(%rdi),%r8
+        xor    %rcx,%r10
+        xor    %rdx,%r11
+        rol    $0xa,%r10
+        xor    %rbx,%r9
+        rol    $0xf,%r11
+        xor    %rbp,%r12
+        rol    $0x24,%r9
+        xor    %rax,%r8
+        rol    $0x38,%r12
+        mov    %r10,%r13
+        or     %r11,%r10
+        rol    $0x1b,%r8
+        not    %r11
+        xor    %r9,%r10
+        mov    %r10,0x80(%rsi)
+        mov    %r12,%r14
+        or     %r11,%r12
+        xor    %r13,%r12
+        mov    %r12,0x88(%rsi)
+        and    %r9,%r13
+        xor    %r8,%r13
+        mov    %r13,0x78(%rsi)
+        or     %r8,%r9
+        xor    %r14,%r9
+        mov    %r9,0x98(%rsi)
+        and    %r14,%r8
+        xor    %r11,%r8
+        mov    %r8,0x90(%rsi)
+        xor    0x10(%rdi),%rdx
+        xor    0x40(%rdi),%rbp
+        rol    $0x3e,%rdx
+        xor    0xa8(%rdi),%rcx
+        rol    $0x37,%rbp
+        xor    0x70(%rdi),%rax
+        rol    $0x2,%rcx
+        xor    0x78(%rdi),%rbx
+        xchg   %rsi,%rdi
+        rol    $0x27,%rax
+        rol    $0x29,%rbx
+        mov    %rdx,%r13
+        and    %rbp,%rdx
+        not    %rbp
+        xor    %rcx,%rdx
+        mov    %rdx,0xc0(%rdi)
+        mov    %rax,%r14
+        and    %rbp,%rax
+        xor    %r13,%rax
+        mov    %rax,0xa0(%rdi)
+        or     %rcx,%r13
+        xor    %rbx,%r13
+        mov    %r13,0xb8(%rdi)
+        and    %rbx,%rcx
+        xor    %r14,%rcx
+        mov    %rcx,0xb0(%rdi)
+        or     %r14,%rbx
+        xor    %rbp,%rbx
+        mov    %rbx,0xa8(%rdi)
+        mov    %rdx,%rbp
+        mov    %r13,%rdx
+        lea    0x8(%r15),%r15
+        mov    0xc8(%rsp),%r8
+        add    $0x2,%r8
+        cmp    $0x18,%r8
+        jne    loop_keccak
+        lea    -0xc0(%r15),%r15
+        notq   0x8(%rdi)
+        notq   0x10(%rdi)
+        notq   0x40(%rdi)
+        notq   0x60(%rdi)
+        notq   0x88(%rdi)
+        notq   0xa0(%rdi)
+        add    $0xd0,%rsp
+        pop    %r15
+        pop    %r14
+        pop    %r13
+        pop    %r12
+        pop    %rbp
+        pop    %rbx
+        ret
+
+#if defined(__linux__) && defined(__ELF__)
+.section .note.GNU-stack,  "",  %progbits
+#endif

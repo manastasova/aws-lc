@@ -33,6 +33,7 @@ if(ARCH STREQUAL "x86_64")
     aesni-x86_64.${ASM_EXT}
     ghash-ssse3-x86_64.${ASM_EXT}
     ghash-x86_64.${ASM_EXT}
+    keccak1600-x86_64.${ASM_EXT}
     md5-x86_64.${ASM_EXT}
     p256-x86_64-asm.${ASM_EXT}
     p256_beeu-x86_64-asm.${ASM_EXT}
@@ -141,6 +142,7 @@ if(PERL_EXECUTABLE)
   perlasm(ghash-x86_64.${ASM_EXT} modes/asm/ghash-x86_64.pl)
   perlasm(ghash-x86.${ASM_EXT} modes/asm/ghash-x86.pl)
   perlasm(keccak1600-armv8.${ASM_EXT} sha/asm/keccak1600-armv8.pl)
+  perlasm(keccak1600-x86_64.${ASM_EXT} sha/asm/keccak1600-x86_64.pl)
   perlasm(md5-586.${ASM_EXT} md5/asm/md5-586.pl)
   perlasm(md5-armv8.${ASM_EXT} md5/asm/md5-armv8.pl)
   perlasm(md5-x86_64.${ASM_EXT} md5/asm/md5-x86_64.pl)
@@ -248,6 +250,8 @@ if((((ARCH STREQUAL "x86_64") AND NOT MY_ASSEMBLER_IS_TOO_OLD_FOR_512AVX) OR
     ${S2N_BIGNUM_DIR}/curve25519/edwards25519_scalarmulbase_alt.S
     ${S2N_BIGNUM_DIR}/curve25519/edwards25519_scalarmuldouble.S
     ${S2N_BIGNUM_DIR}/curve25519/edwards25519_scalarmuldouble_alt.S
+
+    ${S2N_BIGNUM_DIR}/sha3/sha3_keccak_f1600.S
   )
 
   if(ARCH STREQUAL "x86_64")
@@ -263,6 +267,7 @@ if((((ARCH STREQUAL "x86_64") AND NOT MY_ASSEMBLER_IS_TOO_OLD_FOR_512AVX) OR
                 ${S2N_BIGNUM_DIR}/curve25519/curve25519_x25519base.S
                 ${S2N_BIGNUM_DIR}/curve25519/curve25519_x25519base_alt.S
     )
+
   elseif(ARCH STREQUAL "aarch64")
     # byte-level interface for aarch64 s2n-bignum x25519 are in
     # files with "byte" tags, but ed25519 is not, neither are they byte-level...

@@ -428,6 +428,7 @@ void Keccak1600_Squeeze(uint64_t A[KECCAK1600_ROWS][KECCAK1600_ROWS], uint8_t *o
 // implementation.
 
 static int keccak_use_s2n_bignum_main(void) {
+    #if (defined(OPENSSL_AARCH64))
     if (((OPENSSL_armcap_P & (ARMV8_NEOVERSE_N1 |
 			      ARMV8_NEOVERSE_V1 |
 			      ARMV8_NEOVERSE_V2)) != 0))
@@ -436,6 +437,9 @@ static int keccak_use_s2n_bignum_main(void) {
     }
 
     return 0;
+    #elif(defined(OPENSSL_X86_64))
+	return 1;
+    #endif
 }
 
 #if defined(__ARM_FEATURE_SHA3)
