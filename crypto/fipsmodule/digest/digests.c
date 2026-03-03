@@ -458,7 +458,7 @@ static void shake128_squeeze(EVP_MD_CTX *ctx, uint8_t *md, size_t len) {
 
 DEFINE_METHOD_FUNCTION(EVP_MD, EVP_shake128) {
   out->type = NID_shake128;
-  out->md_size = 0;
+  out->md_size = SHAKE128_DEFAULT_LENGTH;
   out->flags = EVP_MD_FLAG_XOF;
   out->init = shake128_init;
   out->update = shake128_update;
@@ -492,7 +492,7 @@ static void shake256_squeeze(EVP_MD_CTX *ctx, uint8_t *md, size_t len) {
 
 DEFINE_METHOD_FUNCTION(EVP_MD, EVP_shake256) {
   out->type = NID_shake256;
-  out->md_size = 0;
+  out->md_size = SHAKE256_DEFAULT_LENGTH;
   out->flags = EVP_MD_FLAG_XOF;
   out->init = shake256_init;
   out->update = shake256_update;

@@ -64,6 +64,11 @@ extern "C" {
 #define SHA3_512_DIGEST_BITLENGTH 512
 #define SHA3_512_DIGEST_LENGTH 64
 
+#define SHAKE128_DEFAULT_LENGTH 32
+#define SHAKE128_DEFAULT_BITLENGTH 256
+#define SHAKE256_DEFAULT_LENGTH 64
+#define SHAKE256_DEFAULT_BITLENGTH 512
+
 #define SHA3_BLOCKSIZE(bitlen) (KECCAK1600_WIDTH - bitlen * 2) / 8
 #define SHA3_PAD_CHAR 0x06
 
@@ -529,10 +534,11 @@ int SHA3_512_Final(uint8_t out[SHA3_512_DIGEST_LENGTH], KECCAK1600_CTX *sha);
  * detailed above each SHAKE_ function signature, is satisfied.
  */
 
-// SHAKE_Init initialises |ctx| fields through |FIPS202_Init| and
-// returns 1 on success and 0 on failure. When call-discipline is
-// maintained and |block_size| value corresponds to a SHAKE block size length
-// in bytes, this function never fails.
+// SHAKE_Init initialises |ctx| fields through |FIPS202_Init|, sets the XOF
+// output length to a default 32 or 64 bytes for SHAKE128 or SHAKE256,
+// respectively, and returns 1 on success and 0 on failure. When
+// call-discipline is maintained and |block_size| value corresponds to
+// a SHAKE block size length in bytes, this function never fails.
 int SHAKE_Init(KECCAK1600_CTX *ctx, size_t block_size);
 
 // SHAKE_Absorb checks |ctx| pointer and |len| values. It updates and absorbs
