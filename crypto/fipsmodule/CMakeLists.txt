@@ -339,6 +339,8 @@ if(ARCH STREQUAL "aarch64")
   list(APPEND BCM_ASM_SOURCES
           ${AWSLC_SOURCE_DIR}/third_party/s2n-bignum/s2n-bignum-to-be-imported/arm/aes/aes-xts-enc.S
           ${AWSLC_SOURCE_DIR}/third_party/s2n-bignum/s2n-bignum-to-be-imported/arm/aes/aes-xts-dec.S
+          ${AWSLC_SOURCE_DIR}/third_party/s2n-bignum/s2n-bignum-to-be-imported/arm/aes/aesv8-gcm-armv8-unroll8-enc-256.S
+          ${AWSLC_SOURCE_DIR}/third_party/s2n-bignum/s2n-bignum-to-be-imported/arm/aes/aesv8-gcm-armv8-unroll8-dec-256.S
   )
 endif()
 
