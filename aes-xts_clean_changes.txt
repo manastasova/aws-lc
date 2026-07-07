@@ -1,0 +1,178 @@
+Comparison: Perl `aes_hw_xts_encrypt` vs s2n-bignum `aes_hw_xts_encrypt`
+
+Function Signature
+Both use the same calling convention: (x0=inp, x1=out, x2=len, x3=key1, x4=key2, x5=ivp).
+
+---
+
+1. AES Key Size Support
+
+                Perl (original)                              s2n-bignum (new)
+Key sizes       AES-128 / 192 / 256 (variable rounds)       AES-256 only (14 rounds hardcoded)
+Round key load  Dynamic: loads q8/q9 pairs in a loop,        Static: all 15 round keys preloaded
+                pre-loads last 7 keys into q10-q15 + q7      into registers at once
+
+The Perl version reads `rounds` from [key1, #240] and uses a dynamic inner loop
+(subs $rounds,$rounds,#2; b.gt .Loop5x_xts_enc) to handle variable key sizes.
+The s2n-bignum version loads all 15 AES-256 keys into vector registers
+(v16, v17, v12, v13, v14, v15, v4, v5, v18, v19, v20, v21, v22, v23, v7)
+and hard-codes all 14 rounds inline with no branching.
+
+---
+
+2. Special Case for 16-byte Input
+
+- Perl (lines 1037-1108): Has a dedicated fast path when len == 16. It skips
+  saving/restoring callee-saved registers entirely, encrypts the IV, encrypts one
+  block using a dynamic round loop, and returns via .Lxts_enc_final_abort.
+
+- s2n-bignum (line 68): Simply checks cmp x2, #16; b.lt .Lxts_enc_abort. There
+  is no special single-block fast path; all sizes >= 16 go through the same code
+  with full register save/restore. The 16-byte case falls through to the tail1x path.
+
+---
+
+3. Stack Frame & Register Save/Restore
+
+                Perl                                         s2n-bignum
+Stack size      64 bytes (only in big-size path)             96 bytes (always)
+GPRs saved      x19, x20, x21, x22 (via stp)               x19, x20, x21, x22
+NEON regs saved d8, d10 (2 pairs = 32 bytes)                d8-d15 (4 pairs = 64 bytes)
+When saved      Only in .Lxts_enc_big_size path              Always at function entry
+
+The s2n-bignum version saves more NEON registers (d8-d15 vs just d8,d10) because
+it uses more vector registers for preloaded keys.
+
+---
+
+4. Main Loop Iteration Counting
+
+- Perl (line 1273): Subtracts 0x50 from len each iteration:
+  subs $len,$len,#0x50, then b.hs .Loop5x_xts_enc.
+
+- s2n-bignum (line 136): Precomputes the number of iterations using a reciprocal
+  multiplication trick:
+      udiv_by_80(x2, x8)   // x8 = x2 / 80 (i.e., len / (5*16))
+  Then counts down: subs x8, x8, #1; cbnz x8, .Loop5x_xts_enc.
+
+---
+
+5. Main Loop Structure (.Loop5x_xts_enc)
+
+Perl (lines 1237-1428):
+- Interleaves AES rounds with key loading: has vld1.32 {q8},[$key_],#16 /
+  vld1.32 {q9},[$key_],#16 inside the round loop.
+- Has an inner loop for variable rounds (subs $rounds,$rounds,#2;
+  b.gt .Loop5x_xts_enc).
+- After the inner loop exits, does the fixed final rounds with q10-q15.
+- Interleaves the post-encryption XOR, tweak update, next-iteration data loading,
+  and store operations with the final AES rounds for pipelining.
+- Uses csel and pointer arithmetic (add $inp,$inp,$xoffset) for input pointer
+  adjustment.
+- Post-loop: complex logic with cmn $len,#0x10 to handle the case of exactly
+  4 remaining blocks by re-entering the 5x loop.
+
+s2n-bignum (lines 138-264):
+- No key loading during AES rounds — all 14 rounds are straight AESE/AESMC
+  sequences using preloaded registers.
+- Loads all 5 data blocks upfront:
+      ldp q0, q1, [x0], #0x50
+      ldp q24, q25, [x0, #-0x30]
+      ldr q26, [x0, #-0x10]
+- Does all XOR-with-IV, then all 14 AES rounds for 5 blocks, then final XOR
+  with last-round-key and IV.
+- Tweak updates are interleaved with the final XOR/store operations (not with
+  AES rounds).
+- Post-loop: simple cascade of comparisons (cmp x2,#0x40 / cmp x2,#0x30 / etc.)
+  branching to the appropriate tail handler.
+
+---
+
+6. Data Register Allocation
+
+                    Perl                                     s2n-bignum
+5 data blocks       q0, q1, q16, q17, q18 ($dat0-$dat4)     v0, v1, v24, v25, v26
+5 IV/tweak regs     v6, v8, v9, v10, v11                     v6, v8, v9, v10, v11 (same)
+Round keys          q8, q9 (dynamic) + q10-q15, q7           v16, v17, v12, v13, v14, v15,
+                    (fixed last 7)                           v4, v5, v18, v19, v20, v21,
+                                                             v22, v23 (rounds 1-14) + v7
+                                                             (last round key)
+
+---
+
+7. Post-Encryption XOR Pattern
+
+Both compute AESE(data, round13_key) XOR last_round_key XOR iv, but differently:
+
+- Perl: Pre-computes tmp = last_round_key XOR iv into a temp register, then
+  XOR tmp, tmp, data after the final AESE. This enables interleaving with
+  tweak/load operations for the next iteration.
+
+- s2n-bignum: Sequential: eor v0, v0, v7 (XOR with last-round-key), then
+  eor v0, v0, v6 (XOR with IV). Simpler, no temp register needed.
+
+---
+
+8. Tail Block Handling (1-4 remaining blocks)
+
+Perl: Complex multi-path scheme:
+- After the 5x loop, uses add $len,$len,#0x50 to recover remaining length,
+  then subs $len,$len,#0x30 to branch.
+- .Lxts_outer_enc_tail (3 blocks): uses a dynamic round loop (loading keys
+  from memory).
+- .Lxts_inner_enc_tail (1-2 blocks): uses a dynamic round loop.
+- .Lxts_enc_tail4x: borrows results from the 5x loop's last iteration.
+
+s2n-bignum: Clean, separated paths:
+- .Lxts_enc_tail4x, .Lxts_enc_tail3x, .Lxts_enc_tail2x, .Lxts_enc_tail1x —
+  each is a self-contained block with all 14 AES rounds fully inlined (no loop,
+  no key loading from memory).
+- Branching logic is straightforward: before the main loop, checks block count
+  and jumps to the right handler; after the loop, same cascade of comparisons.
+
+---
+
+9. Cipher Stealing (Partial Final Block)
+
+Both use the same byte-by-byte swap loop:
+    ldrb  w15,[out, tailcnt]    // load ciphertext byte
+    ldrb  w14,[inp, tailcnt]    // load plaintext byte
+    strb  w15,[tmpoutp, tailcnt] // store ciphertext byte to tail output
+    strb  w14,[out, tailcnt]    // store plaintext byte for re-encryption
+
+After the swap, they encrypt the composite block:
+- Perl: Uses a dynamic round loop (.Loop_final_enc) loading keys from [key1].
+- s2n-bignum: Uses the preloaded round keys (v16...v23, v7) with all 14 rounds
+  inline.
+
+---
+
+10. Tweak (GF(2^128) Multiplication)
+
+Identical algorithm in both:
+    extr  midnum, ivh, ivh, #32
+    extr  ivh, ivh, ivl, #63
+    and   tmp, 0x87, midnum, asr#31
+    eor   ivl, tmp, ivl, lsl#1
+    fmov  d_lo, ivl
+    fmov  d_hi, ivh
+
+The s2n-bignum version wraps this in a tweak(lo, hi) macro.
+
+---
+
+Summary of Key Design Choices
+
+The s2n-bignum version is a simplified, AES-256-only rewrite that trades
+generality for clarity and potentially better performance through:
+
+1. Eliminating all dynamic key-loading loops by preloading all 15 round keys
+   into registers.
+2. Removing the single-block fast path (simplifies code at the cost of slightly
+   more overhead for 16-byte inputs).
+3. Straightforward tail handling with separate self-contained code blocks instead
+   of the Perl version's complex shared-loop approach.
+4. Precomputed loop count via reciprocal multiplication instead of subtracting
+   from the length.
+5. Sequential (non-interleaved) post-round operations — simpler but potentially
+   less pipelined than the Perl version's interleaving strategy.

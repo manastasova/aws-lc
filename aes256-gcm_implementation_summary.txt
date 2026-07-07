@@ -1,0 +1,90 @@
+AES-256-GCM Assembly Split: Implementation Summary
+====================================================
+
+Overview
+--------
+Extracted the AES-256-GCM 8x-unrolled encrypt and decrypt functions from the
+monolithic Perl file (aesv8-gcm-armv8-unroll8.pl) into separate Perl files.
+This mirrors the approach used in the AES-XTS cleanup and enables incremental
+cleanup of the 256-bit functions independently.
+
+Functions moved:
+  - aesv8_gcm_8x_enc_256  ->  aesv8-gcm-enc-256.pl
+  - aesv8_gcm_8x_dec_256  ->  aesv8-gcm-dec-256.pl
+
+Functions remaining in aesv8-gcm-armv8-unroll8.pl:
+  - aesv8_gcm_8x_enc_128
+  - aesv8_gcm_8x_dec_128
+  - aesv8_gcm_8x_enc_192
+  - aesv8_gcm_8x_dec_192
+
+Files Modified
+--------------
+1. crypto/fipsmodule/CMakeLists.txt
+   - Added aesv8-gcm-enc-256.${ASM_EXT} and aesv8-gcm-dec-256.${ASM_EXT}
+     to the aarch64 BCM_ASM_SOURCES list.
+   - Added perlasm() calls for the two new .pl files.
+
+2. crypto/fipsmodule/modes/asm/aesv8-gcm-armv8-unroll8.pl
+   - Removed the AES-256 scope block (~2475 lines) containing enc_256 and
+     dec_256 functions. File reduced from 7245 to 4769 lines.
+
+Files Added (new split Perl sources, already existed as untracked)
+------------------------------------------------------------------
+3. crypto/fipsmodule/modes/asm/aesv8-gcm-enc-256.pl
+4. crypto/fipsmodule/modes/asm/aesv8-gcm-dec-256.pl
+
+Generated Assembly Files
+------------------------
+Regenerated for all three aarch64 platforms (linux64, ios64, win64):
+
+5. generated-src/linux-aarch64/crypto/fipsmodule/aesv8-gcm-armv8-unroll8.S
+6. generated-src/linux-aarch64/crypto/fipsmodule/aesv8-gcm-enc-256.S  (new)
+7. generated-src/linux-aarch64/crypto/fipsmodule/aesv8-gcm-dec-256.S  (new)
+8. generated-src/ios-aarch64/crypto/fipsmodule/aesv8-gcm-armv8-unroll8.S
+9. generated-src/ios-aarch64/crypto/fipsmodule/aesv8-gcm-enc-256.S    (new)
+10. generated-src/ios-aarch64/crypto/fipsmodule/aesv8-gcm-dec-256.S   (new)
+11. generated-src/win-aarch64/crypto/fipsmodule/aesv8-gcm-armv8-unroll8.S
+12. generated-src/win-aarch64/crypto/fipsmodule/aesv8-gcm-enc-256.S   (new)
+13. generated-src/win-aarch64/crypto/fipsmodule/aesv8-gcm-dec-256.S   (new)
+
+Regenerating Assembly from Perl Sources
+----------------------------------------
+From the repository root:
+
+  perl crypto/fipsmodule/modes/asm/aesv8-gcm-armv8-unroll8.pl linux64 generated-src/linux-aarch64/crypto/fipsmodule/aesv8-gcm-armv8-unroll8.S
+  perl crypto/fipsmodule/modes/asm/aesv8-gcm-enc-256.pl linux64 generated-src/linux-aarch64/crypto/fipsmodule/aesv8-gcm-enc-256.S
+  perl crypto/fipsmodule/modes/asm/aesv8-gcm-dec-256.pl linux64 generated-src/linux-aarch64/crypto/fipsmodule/aesv8-gcm-dec-256.S
+
+  perl crypto/fipsmodule/modes/asm/aesv8-gcm-armv8-unroll8.pl ios64 generated-src/ios-aarch64/crypto/fipsmodule/aesv8-gcm-armv8-unroll8.S
+  perl crypto/fipsmodule/modes/asm/aesv8-gcm-enc-256.pl ios64 generated-src/ios-aarch64/crypto/fipsmodule/aesv8-gcm-enc-256.S
+  perl crypto/fipsmodule/modes/asm/aesv8-gcm-dec-256.pl ios64 generated-src/ios-aarch64/crypto/fipsmodule/aesv8-gcm-dec-256.S
+
+  perl crypto/fipsmodule/modes/asm/aesv8-gcm-armv8-unroll8.pl win64 generated-src/win-aarch64/crypto/fipsmodule/aesv8-gcm-armv8-unroll8.S
+  perl crypto/fipsmodule/modes/asm/aesv8-gcm-enc-256.pl win64 generated-src/win-aarch64/crypto/fipsmodule/aesv8-gcm-enc-256.S
+  perl crypto/fipsmodule/modes/asm/aesv8-gcm-dec-256.pl win64 generated-src/win-aarch64/crypto/fipsmodule/aesv8-gcm-dec-256.S
+
+Building
+--------
+From the repository root:
+
+  mkdir -p build
+  cd build
+  cmake ..
+  make -j$(nproc) crypto_test
+
+Running Tests
+-------------
+From the build directory:
+
+  # GCM-specific tests only:
+  ./crypto/crypto_test --gtest_filter="*GCM*"
+
+  # Full crypto test suite:
+  ./crypto/crypto_test
+
+Verification
+------------
+- Build: succeeded with no linker errors (no duplicate or missing symbols).
+- GCM tests: 92 tests passed (including AES-256-GCM encrypt/decrypt).
+- Full crypto_test: 3665 passed, 2 skipped, 0 failures.

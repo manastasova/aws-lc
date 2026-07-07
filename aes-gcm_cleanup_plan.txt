@@ -1,0 +1,224 @@
+AES-GCM-256 Cleanup Plan — Applying XTS-Style Changes
+======================================================
+
+Context
+-------
+The AES-XTS code was cleaned up with specific optimizations documented in
+aes-xts_clean_changes.txt. This document analyzes which of those same changes
+apply to the AES-GCM-256 Perl code (aesv8-gcm-enc-256.pl and
+aesv8-gcm-dec-256.pl). Changes would be made within the Perl files first;
+the .S file transition comes later as a separate step.
+
+
+Analysis: Which XTS Changes Apply to GCM?
+==========================================
+
+1. AES Key Size Support — ALREADY DONE
+---------------------------------------
+  XTS change: Variable rounds -> AES-256 only (14 rounds hardcoded)
+  GCM status: Already AES-256 only. The 256 functions were already split out
+  into dedicated files. All 14 rounds are hardcoded inline. No change needed.
+
+
+2. Special Case for Small Input — NOT APPLICABLE
+-------------------------------------------------
+  XTS change: Removed dedicated 16-byte fast path that skipped callee-saved
+  register save/restore.
+  GCM status: No such fast path exists. GCM only has cbz x1, .L256_enc_ret
+  for zero-length input. No change needed.
+
+
+3. Stack Frame & Register Save/Restore — MINOR CLEANUP POSSIBLE
+----------------------------------------------------------------
+  XTS change: Wrapped stp/ldp in save_regs/restore_regs macros.
+  GCM status: Uses direct stp/ldp (lines 170-176 and 1349-1352 in enc-256.pl).
+  Could define Perl subroutines save_vregs()/restore_vregs() for consistency,
+  but this is cosmetic. Low priority.
+
+  GCM stack frame (80 bytes):
+      stp  d8, d9, [sp, #-80]!     // pre-index
+      stp  d10, d11, [sp, #16]
+      stp  d12, d13, [sp, #32]
+      stp  d14, d15, [sp, #48]
+      stp  x5, xzr, [sp, #64]      // modulo constant storage
+
+  No GPRs saved (GCM uses only caller-saved GPRs x0-x16).
+
+
+4. Main Loop Iteration Counting — NO CHANGE NEEDED
+---------------------------------------------------
+  XTS change: Replaced "subs len,len,#0x50; b.hs" with precomputed iteration
+  count via reciprocal multiplication (udiv_by_80), then "subs x8,x8,#1; cbnz".
+
+  GCM current approach (enc-256.pl lines 183-192):
+      main_end_input_ptr = ((byte_length - 1) & 0xffffffffffffff80) + input_ptr
+  Then loops with: cmp input_ptr, main_end_input_ptr; b.lt .L256_enc_main_loop
+
+  This is pointer-based comparison — already clean and efficient. The pointer
+  comparison approach avoids needing a division entirely. No change needed.
+
+
+5. Round Key Preloading — CANNOT APPLY
+--------------------------------------
+  XTS change: Preloaded all 15 round keys into NEON registers, eliminated all
+  key-loading instructions from the main loop.
+
+  GCM constraint: Uses 8x unrolling with interleaved GHASH. ALL 32 NEON
+  registers are fully allocated:
+      v0-v7:   CTR blocks (8 blocks for AES-CTR encryption)
+      v8-v15:  result blocks / GHASH input
+      v16:     temporary (t0)
+      v17-v19: GHASH accumulators (acc_h, acc_m, acc_l)
+      v20-v25: H-table hash keys (reloaded per iteration)
+      v26-v28: round keys (only 3 registers!)
+      v29-v31: temporaries and counter (t1, rtmp_ctr, rctr_inc)
+
+  Only v26-v28 are available for round keys. The dynamic ldp loading pattern
+  (loading 2 round keys at a time between AES round groups) is a hard
+  constraint imposed by the 8x unrolling + GHASH interleaving.
+
+  Round key loading schedule in main loop:
+      ldp rk0q, rk1q, [cc, #0]    -> v26, v27
+      ldp rk2q, rk3q, [cc, #32]   -> v28, v26
+      ldp rk4q, rk5q, [cc, #64]   -> v27, v28
+      ldp rk6q, rk7q, [cc, #96]   -> v26, v27
+      ldp rk8q, rk9q, [cc, #128]  -> v28, v26
+      ldp rk10q,rk11q,[cc, #160]  -> v27, v28
+      ldp rk12q,rk13q,[cc, #192]  -> v26, v27
+      ldr rk14q,[cc, #224]        -> v28
+
+  THIS CHANGE CANNOT BE APPLIED TO GCM.
+
+
+6. Data Register Allocation — NO CHANGE NEEDED
+-----------------------------------------------
+  XTS change: Changed data registers from q0-q4 to v0,v1,v24,v25,v26.
+  GCM status: Register allocation is already fully optimized for 8x unrolling
+  with GHASH interleaving. All 32 NEON registers are in use. No improvements
+  possible.
+
+
+7. Post-Encryption XOR Pattern — ALREADY BETTER THAN XTS
+---------------------------------------------------------
+  XTS change: Simplified from pre-computed "tmp = last_key XOR iv" to sequential
+  "eor v0,v0,v7; eor v0,v0,v6" (two instructions).
+
+  GCM status: Uses eor3 (3-way XOR from SHA3/ARMv8.2 extension) to combine
+  plaintext, encrypted CTR block, and last round key in a SINGLE instruction:
+      eor3 res0b, ctr_t0b, ctr0b, rk14   // result = plaintext XOR AES(ctr) XOR rk14
+
+  This is already more efficient than both XTS approaches (1 instruction vs 2).
+  No change needed.
+
+
+8. Tail Block Handling — ALREADY SEPARATE PATHS
+------------------------------------------------
+  XTS change: Replaced complex shared-loop tail handling with clean separate
+  code paths for each tail size (tail1x through tail4x).
+
+  GCM status: Already has separate fallthrough paths for each tail size:
+      .L256_enc_blocks_more_than_7   (8 remaining blocks)
+      .L256_enc_blocks_more_than_6   (7 remaining blocks)
+      .L256_enc_blocks_more_than_5   (6 remaining blocks)
+      .L256_enc_blocks_more_than_4   (5 remaining blocks)
+      .L256_enc_blocks_more_than_3   (4 remaining blocks)
+      .L256_enc_blocks_more_than_2   (3 remaining blocks)
+      .L256_enc_blocks_more_than_1   (2 remaining blocks)
+      .L256_enc_blocks_less_than_1   (1 or partial block)
+
+  Each path handles its own GHASH authentication + store. The cascading
+  fallthrough structure is appropriate here because each tail block adds one
+  more GHASH operation on top of the previous ones. No structural change needed.
+
+
+9. Cipher Stealing — NOT APPLICABLE
+------------------------------------
+  XTS change: Changed from dynamic round loop to inline rounds for composite block.
+  GCM: Does not have cipher stealing. GCM handles partial final blocks via
+  bit masking (lines 1286-1313 in enc-256.pl). Not applicable.
+
+
+10. Tweak/GF(2^128) Multiplication — NOT APPLICABLE
+----------------------------------------------------
+  XTS change: Same algorithm, wrapped in macro.
+  GCM: No tweak operation. GCM uses simple CTR increment (add + rev32)
+  instead. Not applicable.
+
+
+GCM-Specific Changes That CAN Be Made
+======================================
+
+A. Modulo constant storage (LOW PRIORITY)
+-----------------------------------------
+  Current (enc-256.pl lines 177-179):
+      mov  x5, #0xc200000000000000
+      stp  x5, xzr, [sp, #64]      // store on stack
+      add  x10, sp, #64             // x10 = pointer to stack slot
+  Then later: ldr d16, [x10] to load the modulo constant.
+
+  This uses 16 bytes of stack + a pointer register (x10) for a constant.
+  Could be replaced with mov + fmov when needed, eliminating the stack
+  storage. However, the constant is loaded at multiple points (main loop,
+  prepretail, tail), so the current pointer-based approach is actually
+  efficient. Low priority.
+
+
+B. Comment cleanup (COSMETIC)
+-----------------------------
+  - Some comments say "AES block 4, 5" instead of "AES block 8k+12, 8k+13"
+    in the code near the end of the main loop (lines 701, 721, etc.)
+  - "supress" is misspelled (should be "suppress") at multiple locations
+    (lines 1119, 1147, 1172, 1198, 1225, 1242, 1265 in enc-256.pl)
+  - Similar issues likely exist in dec-256.pl
+
+
+C. BORINGSSL_DISPATCH_TEST — ALREADY CLEAN
+-------------------------------------------
+  The split-out 256 files already don't include the #ifdef
+  BORINGSSL_DISPATCH_TEST block that exists in the parent
+  aesv8-gcm-armv8-unroll8.pl. Already clean.
+
+
+Summary
+=======
+The AES-GCM-256 code is ALREADY in a much cleaner state than the old XTS
+Perl code was before its cleanup. This is because:
+
+  1. GCM-256 was purpose-built for a single key size (14 rounds hardcoded)
+  2. The 8x unrolling with GHASH interleaving is already a fixed structure
+  3. Tail handling already uses separate fallthrough paths
+  4. The eor3 three-way XOR is already more efficient than XTS's approach
+  5. Register allocation is already fully optimized (all 32 NEON regs used)
+  6. No special-case fast paths to remove
+  7. Loop control uses clean pointer comparison
+
+The main XTS optimization that improved performance (preloading all round
+keys into registers) CANNOT be applied to GCM due to the extreme register
+pressure from 8x unrolling + interleaved GHASH authentication.
+
+Applicable changes are limited to:
+  - Minor comment fixes (typos, inconsistent block numbering)
+  - Optional Perl subroutine wrappers for save/restore (cosmetic)
+  - The eventual .S file transition (separate future step)
+
+
+Change summary table
+--------------------
+XTS Change                    | Applies to GCM? | Reason
+------------------------------|-----------------|-----------------------------------
+AES-256 only                  | ALREADY DONE    | 256 functions already split out
+Remove small-input fast path  | NOT APPLICABLE  | No such path exists in GCM
+Stack save/restore macros     | COSMETIC ONLY   | Direct stp/ldp works fine
+Precomputed loop count        | NO CHANGE       | Pointer comparison already clean
+Round key preloading          | CANNOT APPLY    | All 32 NEON regs used, only 3 for keys
+Data register reallocation    | NO CHANGE       | Already optimized
+Post-encryption XOR           | ALREADY BETTER  | eor3 single instruction vs 2
+Tail handling separate paths  | ALREADY DONE    | Cascading fallthrough already in place
+Cipher stealing inline        | NOT APPLICABLE  | GCM has no cipher stealing
+Tweak macro                   | NOT APPLICABLE  | GCM uses CTR, not tweaks
+
+
+Files
+-----
+  crypto/fipsmodule/modes/asm/aesv8-gcm-enc-256.pl  (encryption, ~1400 lines)
+  crypto/fipsmodule/modes/asm/aesv8-gcm-dec-256.pl  (decryption, ~1398 lines)
