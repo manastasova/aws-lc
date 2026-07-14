@@ -332,8 +332,8 @@ void evp_pkey_set_cb_translate(BN_GENCB *cb, EVP_PKEY_CTX *ctx);
 
 #define ED25519_PUBLIC_KEY_OFFSET 32
 #define FIPS_EVP_PKEY_METHODS 9
-#define NON_FIPS_EVP_PKEY_METHODS 3
-#define ASN1_EVP_PKEY_METHODS 11
+#define NON_FIPS_EVP_PKEY_METHODS 4
+#define ASN1_EVP_PKEY_METHODS 12
 
 struct fips_evp_pkey_methods {
   const EVP_PKEY_METHOD * methods[FIPS_EVP_PKEY_METHODS];

@@ -20,6 +20,16 @@ typedef struct {
   char has_private;
 } X25519_KEY;
 
+typedef struct {
+  uint8_t pub[57];
+  uint8_t seed[57];
+  char has_private;
+} ED448_KEY;
+
+#define ED448_PUBLIC_KEY_LEN 57
+#define ED448_SEED_LEN 57
+#define ED448_SIGNATURE_LEN 114
+
 extern const size_t asn1_evp_pkey_methods_size;
 extern const EVP_PKEY_ASN1_METHOD *const asn1_evp_pkey_methods[];
 extern const EVP_PKEY_ASN1_METHOD dsa_asn1_meth;
@@ -33,8 +43,10 @@ extern const EVP_PKEY_ASN1_METHOD kem_asn1_meth;
 extern const EVP_PKEY_ASN1_METHOD hmac_asn1_meth;
 extern const EVP_PKEY_ASN1_METHOD dh_asn1_meth;
 extern const EVP_PKEY_ASN1_METHOD ed25519ph_asn1_meth;
+extern const EVP_PKEY_ASN1_METHOD ed448_asn1_meth;
 
 extern const EVP_PKEY_METHOD x25519_pkey_meth;
+extern const EVP_PKEY_METHOD ed448_pkey_meth;
 extern const EVP_PKEY_METHOD hkdf_pkey_meth;
 extern const EVP_PKEY_METHOD hmac_pkey_meth;
 extern const EVP_PKEY_METHOD dh_pkey_meth;

@@ -1148,8 +1148,7 @@ OPENSSL_EXPORT void *EVP_PKEY_CTX_get_app_data(EVP_PKEY_CTX *ctx);
 // X448 and attempts to create keys will fail.
 #define EVP_PKEY_X448 NID_X448
 
-// EVP_PKEY_ED448 is defined for OpenSSL compatibility, but we do not support
-// Ed448 and attempts to create keys will fail.
+// EVP_PKEY_ED448 identifies Ed448 keys in EVP_PKEY objects.
 #define EVP_PKEY_ED448 NID_ED448
 
 // EVP_MD_get_pkey_type returns the NID of the public key signing algorithm

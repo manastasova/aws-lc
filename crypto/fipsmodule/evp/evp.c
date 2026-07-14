@@ -560,6 +560,9 @@ EVP_PKEY *EVP_PKEY_new_raw_private_key(int type, ENGINE *unused,
     case EVP_PKEY_ED25519PH:
       method = &ed25519ph_asn1_meth;
       break;
+    case EVP_PKEY_ED448:
+      method = &ed448_asn1_meth;
+      break;
     case EVP_PKEY_HMAC:
       method = &hmac_asn1_meth;
       break;
@@ -599,6 +602,9 @@ EVP_PKEY *EVP_PKEY_new_raw_public_key(int type, ENGINE *unused,
       break;
     case EVP_PKEY_ED25519PH:
       method = &ed25519ph_asn1_meth;
+      break;
+    case EVP_PKEY_ED448:
+      method = &ed448_asn1_meth;
       break;
     default:
       OPENSSL_PUT_ERROR(EVP, EVP_R_UNSUPPORTED_ALGORITHM);
