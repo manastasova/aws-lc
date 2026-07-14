@@ -425,6 +425,8 @@ add_library(
   curve448/arch_64/f_impl64.c
   curve448/arch_32/f_impl32.c
   curve448/scalar.c
+  curve448/curve448.c
+  curve448/curve448_tables.c
   ex_data.c
   hpke/hpke.c
   hrss/hrss.c

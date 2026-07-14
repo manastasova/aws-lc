@@ -38,6 +38,10 @@ struct curve448_precomputed_s {
 #define X448_PUBLIC_BYTES 56
 #define X448_PRIVATE_BYTES 56
 
+#define EDDSA_448_PUBLIC_BYTES 57
+#define EDDSA_448_PRIVATE_BYTES EDDSA_448_PUBLIC_BYTES
+#define EDDSA_448_SIGNATURE_BYTES (EDDSA_448_PUBLIC_BYTES + EDDSA_448_PRIVATE_BYTES)
+
 // Twisted Edwards extended homogeneous coordinates.
 typedef struct curve448_point_s {
     gf x, y, z, t;
@@ -114,6 +118,14 @@ void curve448_base_double_scalarmul_non_secret(curve448_point_t combo,
     const curve448_scalar_t scalar2);
 
 c448_bool_t curve448_point_valid(const curve448_point_t to_test);
+
+void curve448_point_mul_by_ratio_and_encode_like_eddsa(
+    uint8_t enc[EDDSA_448_PUBLIC_BYTES],
+    const curve448_point_t p);
+
+c448_error_t curve448_point_decode_like_eddsa_and_mul_by_ratio(
+    curve448_point_t p,
+    const uint8_t enc[EDDSA_448_PUBLIC_BYTES]);
 
 void curve448_scalar_destroy(curve448_scalar_t scalar);
 void curve448_point_destroy(curve448_point_t point);
