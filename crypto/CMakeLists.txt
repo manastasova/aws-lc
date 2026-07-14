@@ -803,6 +803,7 @@ if(BUILD_TESTING)
     fipsmodule/bn/bn_test.cc
     fipsmodule/bn/bn_assert_test.cc
     fipsmodule/cmac/cmac_test.cc
+    curve448/ed448_test.cc
     fipsmodule/curve25519/ed25519_test.cc
     fipsmodule/curve25519/x25519_test.cc
     fipsmodule/ec/ec_test.cc

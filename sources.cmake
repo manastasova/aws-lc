@@ -321,6 +321,7 @@ set(
   third_party/vectors/converted/wycheproof/testvectors_v1/ecdsa_secp256k1_sha256_test.txt
   third_party/vectors/converted/wycheproof/testvectors_v1/ecdsa_secp256k1_sha512_test.txt
   third_party/vectors/converted/wycheproof/testvectors_v1/ed25519_test.txt
+  third_party/wycheproof_testvectors/ed448_test.txt
   third_party/wycheproof_testvectors/hkdf_sha1_test.txt
   third_party/wycheproof_testvectors/hkdf_sha256_test.txt
   third_party/wycheproof_testvectors/hkdf_sha384_test.txt
