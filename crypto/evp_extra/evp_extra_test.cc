@@ -3883,3 +3883,75 @@ TEST(EVPExtraTest, Ed25519PKCS8v2WithAttributes) {
   ASSERT_TRUE(EVP_PKEY_get_raw_public_key(parsed.get(), pub, &pub_len));
   EXPECT_EQ(Bytes(pub, pub_len), Bytes(kPublicKey));
 }
+
+// Acceptance test for Ed448 signature support (V2120867906).
+// This test encodes the core acceptance criteria for Ed448: key creation via
+// EVP_PKEY_new_raw_{public,private}_key, signing via EVP_DigestSign, and
+// verification via EVP_DigestVerify, using a Wycheproof known-answer vector.
+// It is expected to FAIL until Ed448 is implemented.
+TEST(EVPExtraTest, Ed448) {
+  // Wycheproof ed448_test.json tcId=3: message "Test" (hex 54657374).
+  // Public key (57 bytes):
+  static const uint8_t kPublicKey[57] = {
+      0x41, 0x96, 0x10, 0xa5, 0x34, 0xaf, 0x12, 0x7f, 0x58, 0x3b, 0x04, 0x81,
+      0x8c, 0xdb, 0x7f, 0x0f, 0xf3, 0x00, 0xb0, 0x25, 0xf2, 0xe0, 0x16, 0x82,
+      0xbc, 0xae, 0x33, 0xfd, 0x69, 0x1c, 0xee, 0x03, 0x95, 0x11, 0xdf, 0x0c,
+      0xdd, 0xc6, 0x90, 0xee, 0x97, 0x84, 0x26, 0xe8, 0xb3, 0x8e, 0x50, 0xce,
+      0x5a, 0xf7, 0xdc, 0xfb, 0xa5, 0x0f, 0x70, 0x4c, 0x00,
+  };
+
+  // Expected signature (114 bytes):
+  static const uint8_t kSignature[114] = {
+      0x5d, 0x05, 0x3f, 0xf5, 0xb7, 0x1f, 0x6e, 0xc3, 0x28, 0x45, 0x25, 0xd3,
+      0x5d, 0x77, 0x93, 0x31, 0x78, 0xc8, 0xe1, 0x98, 0x79, 0x88, 0x6d, 0x08,
+      0xec, 0xcc, 0x6c, 0x7d, 0x27, 0xe9, 0xe5, 0xb5, 0xe0, 0x25, 0x37, 0xdb,
+      0xc4, 0xd4, 0x72, 0x35, 0x06, 0xe8, 0xd1, 0x71, 0xfc, 0x17, 0x33, 0x85,
+      0x75, 0x73, 0xdd, 0x02, 0xd1, 0x8f, 0x48, 0xf2, 0x80, 0x31, 0xd6, 0x7d,
+      0x69, 0x9a, 0x18, 0x8a, 0x9c, 0xa4, 0x6b, 0x4e, 0xab, 0xe2, 0x10, 0x7a,
+      0xef, 0x23, 0x7c, 0xa6, 0x09, 0xcb, 0x46, 0x2e, 0x24, 0xc9, 0x1d, 0x25,
+      0xd2, 0x86, 0x40, 0x2b, 0x6e, 0xf7, 0x86, 0x2b, 0x78, 0xa3, 0x86, 0x95,
+      0x02, 0x46, 0xff, 0x38, 0xd6, 0xd2, 0xf4, 0x58, 0x13, 0x6d, 0x12, 0xe3,
+      0xc9, 0x7f, 0xdd, 0x98, 0x26, 0x00,
+  };
+
+  static const uint8_t kMessage[] = {0x54, 0x65, 0x73, 0x74};  // "Test"
+
+  // 1. Create a public key from raw bytes via EVP_PKEY_new_raw_public_key.
+  //    This is the primary gate: Ed448 must be recognized as a key type.
+  bssl::UniquePtr<EVP_PKEY> pubkey(EVP_PKEY_new_raw_public_key(
+      EVP_PKEY_ED448, nullptr, kPublicKey, sizeof(kPublicKey)));
+  ASSERT_TRUE(pubkey) << "EVP_PKEY_new_raw_public_key(EVP_PKEY_ED448) failed; "
+                         "Ed448 is not yet supported";
+  EXPECT_EQ(EVP_PKEY_ED448, EVP_PKEY_id(pubkey.get()));
+
+  // 2. The public key must be extractable.
+  uint8_t buf[57];
+  size_t len;
+  ASSERT_TRUE(EVP_PKEY_get_raw_public_key(pubkey.get(), nullptr, &len));
+  EXPECT_EQ(len, 57u);
+  ASSERT_TRUE(EVP_PKEY_get_raw_public_key(pubkey.get(), buf, &len));
+  EXPECT_EQ(Bytes(buf, len), Bytes(kPublicKey));
+
+  // 3. Verify a known-good signature (Wycheproof vector).
+  bssl::ScopedEVP_MD_CTX ctx;
+  ASSERT_TRUE(EVP_DigestVerifyInit(ctx.get(), nullptr, nullptr, nullptr,
+                                   pubkey.get()));
+  EXPECT_EQ(1, EVP_DigestVerify(ctx.get(), kSignature, sizeof(kSignature),
+                                kMessage, sizeof(kMessage)));
+
+  // 4. SPKI encoding round-trip: the public key must marshal to
+  //    SubjectPublicKeyInfo with OID 1.3.101.113 and parse back identically.
+  bssl::ScopedCBB cbb;
+  uint8_t *der;
+  size_t der_len;
+  ASSERT_TRUE(CBB_init(cbb.get(), 0));
+  ASSERT_TRUE(EVP_marshal_public_key(cbb.get(), pubkey.get()));
+  ASSERT_TRUE(CBB_finish(cbb.get(), &der, &der_len));
+  bssl::UniquePtr<uint8_t> free_der(der);
+
+  CBS cbs;
+  CBS_init(&cbs, der, der_len);
+  bssl::UniquePtr<EVP_PKEY> pubkey2(EVP_parse_public_key(&cbs));
+  ASSERT_TRUE(pubkey2);
+  EXPECT_EQ(1, EVP_PKEY_cmp(pubkey.get(), pubkey2.get()));
+}
