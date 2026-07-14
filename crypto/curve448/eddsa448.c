@@ -70,6 +70,7 @@ void ED448_keypair_from_seed(uint8_t out_public_key[57],
     curve448_scalar_destroy(secret_scalar);
     curve448_point_destroy(p);
     OPENSSL_cleanse(secret_scalar_ser, sizeof(secret_scalar_ser));
+    CONSTTIME_DECLASSIFY(out_public_key, EDDSA_448_PUBLIC_BYTES);
 }
 
 int ED448_sign(uint8_t out_sig[114],
@@ -153,12 +154,12 @@ int ED448_sign(uint8_t out_sig[114],
     memcpy(out_sig, nonce_point, sizeof(nonce_point));
     curve448_scalar_encode(&out_sig[EDDSA_448_PUBLIC_BYTES], challenge_scalar);
 
+    CONSTTIME_DECLASSIFY(out_sig, EDDSA_448_SIGNATURE_BYTES);
+    ret = 1;
+err:
     curve448_scalar_destroy(secret_scalar);
     curve448_scalar_destroy(nonce_scalar);
     curve448_scalar_destroy(challenge_scalar);
-
-    ret = 1;
-err:
     EVP_MD_CTX_cleanup(&hashctx);
     return ret;
 }
