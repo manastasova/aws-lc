@@ -14,6 +14,7 @@
 #include "field448.h"
 #include "point_448.h"
 #include "internal.h"
+#include "../fipsmodule/sha/internal.h"
 
 #define COFACTOR 4
 #define C448_EDDSA_ENCODE_RATIO 4
@@ -32,19 +33,7 @@ static int hash_init_with_dom(EVP_MD_CTX *hashctx) {
 
 static int oneshot_hash(uint8_t *out, size_t outlen,
     const uint8_t *in, size_t inlen) {
-    EVP_MD_CTX *ctx = EVP_MD_CTX_new();
-    int ret = 0;
-
-    if (ctx == NULL)
-        return 0;
-    if (!EVP_DigestInit_ex(ctx, EVP_shake256(), NULL) ||
-        !EVP_DigestUpdate(ctx, in, inlen) ||
-        !EVP_DigestFinalXOF(ctx, out, outlen))
-        goto err;
-    ret = 1;
-err:
-    EVP_MD_CTX_free(ctx);
-    return ret;
+    return SHAKE256(in, inlen, out, outlen) != NULL;
 }
 
 static void clamp(uint8_t secret_scalar_ser[EDDSA_448_PRIVATE_BYTES]) {
@@ -88,15 +77,14 @@ int ED448_sign(uint8_t out_sig[114],
     const uint8_t private_key[57],
     const uint8_t public_key[57]) {
     curve448_scalar_t secret_scalar;
-    EVP_MD_CTX *hashctx = EVP_MD_CTX_new();
+    EVP_MD_CTX hashctx;
     int ret = 0;
     curve448_scalar_t nonce_scalar;
     uint8_t nonce_point[EDDSA_448_PUBLIC_BYTES] = {0};
     unsigned int c;
     curve448_scalar_t challenge_scalar;
 
-    if (hashctx == NULL)
-        return 0;
+    EVP_MD_CTX_init(&hashctx);
 
     {
         uint8_t expanded[EDDSA_448_PRIVATE_BYTES * 2];
@@ -108,11 +96,11 @@ int ED448_sign(uint8_t out_sig[114],
         curve448_scalar_decode_long(secret_scalar, expanded,
             EDDSA_448_PRIVATE_BYTES);
 
-        if (!hash_init_with_dom(hashctx) ||
-            !EVP_DigestUpdate(hashctx,
+        if (!hash_init_with_dom(&hashctx) ||
+            !EVP_DigestUpdate(&hashctx,
                 expanded + EDDSA_448_PRIVATE_BYTES,
                 EDDSA_448_PRIVATE_BYTES) ||
-            !EVP_DigestUpdate(hashctx, message, message_len)) {
+            !EVP_DigestUpdate(&hashctx, message, message_len)) {
             OPENSSL_cleanse(expanded, sizeof(expanded));
             goto err;
         }
@@ -122,7 +110,7 @@ int ED448_sign(uint8_t out_sig[114],
     {
         uint8_t nonce[2 * EDDSA_448_PRIVATE_BYTES];
 
-        if (!EVP_DigestFinalXOF(hashctx, nonce, sizeof(nonce)))
+        if (!EVP_DigestFinalXOF(&hashctx, nonce, sizeof(nonce)))
             goto err;
         curve448_scalar_decode_long(nonce_scalar, nonce, sizeof(nonce));
         OPENSSL_cleanse(nonce, sizeof(nonce));
@@ -146,11 +134,11 @@ int ED448_sign(uint8_t out_sig[114],
     {
         uint8_t challenge[2 * EDDSA_448_PRIVATE_BYTES];
 
-        if (!hash_init_with_dom(hashctx) ||
-            !EVP_DigestUpdate(hashctx, nonce_point, sizeof(nonce_point)) ||
-            !EVP_DigestUpdate(hashctx, public_key, EDDSA_448_PUBLIC_BYTES) ||
-            !EVP_DigestUpdate(hashctx, message, message_len) ||
-            !EVP_DigestFinalXOF(hashctx, challenge, sizeof(challenge)))
+        if (!hash_init_with_dom(&hashctx) ||
+            !EVP_DigestUpdate(&hashctx, nonce_point, sizeof(nonce_point)) ||
+            !EVP_DigestUpdate(&hashctx, public_key, EDDSA_448_PUBLIC_BYTES) ||
+            !EVP_DigestUpdate(&hashctx, message, message_len) ||
+            !EVP_DigestFinalXOF(&hashctx, challenge, sizeof(challenge)))
             goto err;
 
         curve448_scalar_decode_long(challenge_scalar, challenge,
@@ -171,7 +159,7 @@ int ED448_sign(uint8_t out_sig[114],
 
     ret = 1;
 err:
-    EVP_MD_CTX_free(hashctx);
+    EVP_MD_CTX_cleanup(&hashctx);
     return ret;
 }
 
@@ -211,22 +199,20 @@ int ED448_verify(const uint8_t *message, size_t message_len,
         return 0;
 
     {
-        EVP_MD_CTX *hashctx = EVP_MD_CTX_new();
+        EVP_MD_CTX hashctx;
         uint8_t challenge[2 * EDDSA_448_PRIVATE_BYTES];
 
-        if (hashctx == NULL)
-            return 0;
-
-        if (!hash_init_with_dom(hashctx) ||
-            !EVP_DigestUpdate(hashctx, signature, EDDSA_448_PUBLIC_BYTES) ||
-            !EVP_DigestUpdate(hashctx, public_key, EDDSA_448_PUBLIC_BYTES) ||
-            !EVP_DigestUpdate(hashctx, message, message_len) ||
-            !EVP_DigestFinalXOF(hashctx, challenge, sizeof(challenge))) {
-            EVP_MD_CTX_free(hashctx);
+        EVP_MD_CTX_init(&hashctx);
+        if (!hash_init_with_dom(&hashctx) ||
+            !EVP_DigestUpdate(&hashctx, signature, EDDSA_448_PUBLIC_BYTES) ||
+            !EVP_DigestUpdate(&hashctx, public_key, EDDSA_448_PUBLIC_BYTES) ||
+            !EVP_DigestUpdate(&hashctx, message, message_len) ||
+            !EVP_DigestFinalXOF(&hashctx, challenge, sizeof(challenge))) {
+            EVP_MD_CTX_cleanup(&hashctx);
             return 0;
         }
 
-        EVP_MD_CTX_free(hashctx);
+        EVP_MD_CTX_cleanup(&hashctx);
         curve448_scalar_decode_long(challenge_scalar, challenge,
             sizeof(challenge));
         OPENSSL_cleanse(challenge, sizeof(challenge));
