@@ -427,6 +427,7 @@ add_library(
   curve448/scalar.c
   curve448/curve448.c
   curve448/curve448_tables.c
+  curve448/eddsa448.c
   ex_data.c
   hpke/hpke.c
   hrss/hrss.c
