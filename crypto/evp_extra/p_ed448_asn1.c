@@ -41,9 +41,7 @@ static int ed448_set_priv_raw(EVP_PKEY *pkey, const uint8_t *privkey,
   }
 
   uint8_t pubkey_computed[ED448_PUBLIC_KEY_LEN];
-  uint8_t priv_unused[ED448_SEED_LEN];
-  ED448_keypair_from_seed(pubkey_computed, priv_unused, privkey);
-  OPENSSL_memcpy(key->seed, privkey, ED448_SEED_LEN);
+  ED448_keypair_from_seed(pubkey_computed, key->seed, privkey);
   OPENSSL_memcpy(key->pub, pubkey_computed, ED448_PUBLIC_KEY_LEN);
   key->has_private = 1;
 
@@ -54,7 +52,6 @@ static int ed448_set_priv_raw(EVP_PKEY *pkey, const uint8_t *privkey,
     return 0;
   }
 
-  OPENSSL_cleanse(priv_unused, sizeof(priv_unused));
   ed448_free(pkey);
   pkey->pkey.ptr = key;
   return 1;

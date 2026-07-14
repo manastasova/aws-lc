@@ -12,9 +12,6 @@
 extern "C" {
 #endif
 
-#define ED448_PUBLIC_KEY_LEN 57
-#define ED448_PRIVATE_KEY_LEN 57
-#define ED448_SIGNATURE_LEN 114
 
 void ED448_keypair_from_seed(uint8_t out_public_key[57],
     uint8_t out_private_key[57],
