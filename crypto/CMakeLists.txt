@@ -421,6 +421,10 @@ add_library(
   evp_extra/print.c
   evp_extra/scrypt.c
   evp_extra/sign.c
+  curve448/f_generic.c
+  curve448/arch_64/f_impl64.c
+  curve448/arch_32/f_impl32.c
+  curve448/scalar.c
   ex_data.c
   hpke/hpke.c
   hrss/hrss.c
