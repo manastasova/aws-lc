@@ -506,6 +506,58 @@ TEST(Ed448KATTest, WycheproofVectors) {
 }
 
 // ============================================================================
+// Test: Constant-time validation — signing must not leak secrets via
+// memory-undefined tracking (valgrind/MSAN). Mirrors Ed25519Test.TestVectors.
+// ============================================================================
+TEST(Ed448KATTest, ConstantTimeSign) {
+  for (const auto &vec : kRFC8032Vectors) {
+    SCOPED_TRACE(vec.name);
+
+    auto pkey = Ed448PrivKeyFromSeed(vec.privkey);
+    if (!pkey) {
+      GTEST_SKIP() << "Ed448 not yet implemented";
+      return;
+    }
+
+    uint8_t seed[57];
+    size_t seed_len = sizeof(seed);
+    ASSERT_TRUE(EVP_PKEY_get_raw_private_key(pkey.get(), seed, &seed_len));
+    ASSERT_EQ(57u, seed_len);
+
+    CONSTTIME_SECRET(seed, sizeof(seed));
+
+    auto pkey2 = Ed448PrivKeyFromSeed(seed);
+    ASSERT_TRUE(pkey2);
+
+    uint8_t sig[114];
+    ASSERT_TRUE(Ed448Sign(sig, pkey2.get(), vec.msg, vec.msg_len));
+    CONSTTIME_DECLASSIFY(sig, sizeof(sig));
+
+    EXPECT_EQ(Bytes(vec.sig, 114), Bytes(sig, 114));
+  }
+}
+
+TEST(Ed448KATTest, ConstantTimeKeypair) {
+  uint8_t seed[57];
+  OPENSSL_memcpy(seed, kRFC8032Vectors[0].privkey, sizeof(seed));
+
+  CONSTTIME_SECRET(seed, sizeof(seed));
+
+  auto pkey = Ed448PrivKeyFromSeed(seed);
+  if (!pkey) {
+    GTEST_SKIP() << "Ed448 not yet implemented";
+    return;
+  }
+
+  uint8_t pub_out[57];
+  size_t pub_len = sizeof(pub_out);
+  ASSERT_TRUE(EVP_PKEY_get_raw_public_key(pkey.get(), pub_out, &pub_len));
+  CONSTTIME_DECLASSIFY(pub_out, sizeof(pub_out));
+
+  EXPECT_EQ(Bytes(kRFC8032Vectors[0].pubkey, 57), Bytes(pub_out, 57));
+}
+
+// ============================================================================
 // Test: PKCS#8 and SPKI round-trip
 // Acceptance criteria: #7, #8
 // ============================================================================
