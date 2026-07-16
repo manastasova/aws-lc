@@ -42,7 +42,7 @@ static void clamp(uint8_t secret_scalar_ser[EDDSA_448_PRIVATE_BYTES]) {
     secret_scalar_ser[EDDSA_448_PRIVATE_BYTES - 2] |= 0x80;
 }
 
-void ED448_keypair_from_seed(uint8_t out_public_key[57],
+int ED448_keypair_from_seed(uint8_t out_public_key[57],
     uint8_t out_private_key[57],
     const uint8_t seed[57]) {
     uint8_t secret_scalar_ser[EDDSA_448_PRIVATE_BYTES];
@@ -52,8 +52,11 @@ void ED448_keypair_from_seed(uint8_t out_public_key[57],
 
     memcpy(out_private_key, seed, EDDSA_448_PRIVATE_BYTES);
 
-    oneshot_hash(secret_scalar_ser, sizeof(secret_scalar_ser),
-        seed, EDDSA_448_PRIVATE_BYTES);
+    if (!oneshot_hash(secret_scalar_ser, sizeof(secret_scalar_ser),
+            seed, EDDSA_448_PRIVATE_BYTES)) {
+        OPENSSL_cleanse(secret_scalar_ser, sizeof(secret_scalar_ser));
+        return 0;
+    }
 
     clamp(secret_scalar_ser);
 
@@ -71,6 +74,7 @@ void ED448_keypair_from_seed(uint8_t out_public_key[57],
     curve448_point_destroy(p);
     OPENSSL_cleanse(secret_scalar_ser, sizeof(secret_scalar_ser));
     CONSTTIME_DECLASSIFY(out_public_key, EDDSA_448_PUBLIC_BYTES);
+    return 1;
 }
 
 int ED448_sign(uint8_t out_sig[114],
@@ -91,8 +95,10 @@ int ED448_sign(uint8_t out_sig[114],
         uint8_t expanded[EDDSA_448_PRIVATE_BYTES * 2];
 
         if (!oneshot_hash(expanded, sizeof(expanded), private_key,
-                EDDSA_448_PRIVATE_BYTES))
+                EDDSA_448_PRIVATE_BYTES)) {
+            OPENSSL_cleanse(expanded, sizeof(expanded));
             goto err;
+        }
         clamp(expanded);
         curve448_scalar_decode_long(secret_scalar, expanded,
             EDDSA_448_PRIVATE_BYTES);

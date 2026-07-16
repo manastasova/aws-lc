@@ -26,9 +26,8 @@ typedef struct {
   char has_private;
 } ED448_KEY;
 
-#define ED448_PUBLIC_KEY_LEN 57
-#define ED448_SEED_LEN 57
-#define ED448_SIGNATURE_LEN 114
+// ED448_PUBLIC_KEY_LEN, ED448_SEED_LEN, and ED448_SIGNATURE_LEN are defined in
+// crypto/curve448/internal.h, the single source of truth for Ed448 sizes.
 
 extern const size_t asn1_evp_pkey_methods_size;
 extern const EVP_PKEY_ASN1_METHOD *const asn1_evp_pkey_methods[];

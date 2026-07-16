@@ -618,3 +618,35 @@ TEST(Ed448KATTest, PKCS8AndSPKIRoundTrip) {
                             kRFC8032Vectors[0].msg_len, sig, 114));
   }
 }
+
+// Marshal to the RFC 5958 OneAsymmetricKey (v2) form, which embeds the public
+// key alongside the seed, then parse it back and confirm the round-tripped key
+// still signs identically.
+TEST(Ed448KATTest, PKCS8V2RoundTrip) {
+  auto pkey = Ed448PrivKeyFromSeed(kRFC8032Vectors[0].privkey);
+  if (!pkey) {
+    GTEST_SKIP() << "Ed448 not yet implemented";
+    return;
+  }
+
+  uint8_t *der = nullptr;
+  size_t der_len = 0;
+  bssl::ScopedCBB cbb;
+  ASSERT_TRUE(CBB_init(cbb.get(), 128));
+  ASSERT_TRUE(EVP_marshal_private_key_v2(cbb.get(), pkey.get()));
+  ASSERT_TRUE(CBB_finish(cbb.get(), &der, &der_len));
+  bssl::UniquePtr<uint8_t> der_free(der);
+
+  CBS cbs;
+  CBS_init(&cbs, der, der_len);
+  bssl::UniquePtr<EVP_PKEY> parsed_priv(EVP_parse_private_key(&cbs));
+  ASSERT_TRUE(parsed_priv);
+  EXPECT_EQ(EVP_PKEY_ED448, EVP_PKEY_id(parsed_priv.get()));
+
+  uint8_t sig1[114], sig2[114];
+  ASSERT_TRUE(Ed448Sign(sig1, pkey.get(), kRFC8032Vectors[0].msg,
+                        kRFC8032Vectors[0].msg_len));
+  ASSERT_TRUE(Ed448Sign(sig2, parsed_priv.get(), kRFC8032Vectors[0].msg,
+                        kRFC8032Vectors[0].msg_len));
+  EXPECT_EQ(Bytes(sig1, 114), Bytes(sig2, 114));
+}

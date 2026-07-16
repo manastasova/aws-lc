@@ -12,19 +12,28 @@
 extern "C" {
 #endif
 
+// Canonical Ed448 byte lengths. These are the single source of truth for the
+// key/seed/signature sizes and are reused by the EVP layer (see
+// crypto/evp_extra/internal.h, which includes this header).
+#define ED448_SEED_LEN 57
+#define ED448_PUBLIC_KEY_LEN 57
+#define ED448_SIGNATURE_LEN 114
 
-void ED448_keypair_from_seed(uint8_t out_public_key[57],
-    uint8_t out_private_key[57],
-    const uint8_t seed[57]);
+// ED448_keypair_from_seed derives the public key and stores the seed as the
+// private key. It returns one on success and zero on failure (e.g. the
+// internal hash operation failed).
+int ED448_keypair_from_seed(uint8_t out_public_key[ED448_PUBLIC_KEY_LEN],
+    uint8_t out_private_key[ED448_SEED_LEN],
+    const uint8_t seed[ED448_SEED_LEN]);
 
-int ED448_sign(uint8_t out_sig[114],
+int ED448_sign(uint8_t out_sig[ED448_SIGNATURE_LEN],
     const uint8_t *message, size_t message_len,
-    const uint8_t private_key[57],
-    const uint8_t public_key[57]);
+    const uint8_t private_key[ED448_SEED_LEN],
+    const uint8_t public_key[ED448_PUBLIC_KEY_LEN]);
 
 int ED448_verify(const uint8_t *message, size_t message_len,
-    const uint8_t signature[114],
-    const uint8_t public_key[57]);
+    const uint8_t signature[ED448_SIGNATURE_LEN],
+    const uint8_t public_key[ED448_PUBLIC_KEY_LEN]);
 
 #if defined(__cplusplus)
 }
