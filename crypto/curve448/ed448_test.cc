@@ -650,3 +650,39 @@ TEST(Ed448KATTest, PKCS8V2RoundTrip) {
                         kRFC8032Vectors[0].msg_len));
   EXPECT_EQ(Bytes(sig1, 114), Bytes(sig2, 114));
 }
+
+// EVP_PKEY_keygen must produce a usable Ed448 key whose signatures verify,
+// mirroring the Ed25519/X25519 keygen surface.
+TEST(Ed448KATTest, Keygen) {
+  bssl::UniquePtr<EVP_PKEY_CTX> ctx(
+      EVP_PKEY_CTX_new_id(EVP_PKEY_ED448, nullptr));
+  if (!ctx) {
+    GTEST_SKIP() << "Ed448 not yet implemented";
+    return;
+  }
+  ASSERT_TRUE(EVP_PKEY_keygen_init(ctx.get()));
+
+  EVP_PKEY *raw = nullptr;
+  ASSERT_TRUE(EVP_PKEY_keygen(ctx.get(), &raw));
+  bssl::UniquePtr<EVP_PKEY> pkey(raw);
+  ASSERT_TRUE(pkey);
+  EXPECT_EQ(EVP_PKEY_ED448, EVP_PKEY_id(pkey.get()));
+
+  // A freshly generated key must sign and self-verify.
+  static const uint8_t kMsg[] = {'k', 'e', 'y', 'g', 'e', 'n'};
+  uint8_t sig[114];
+  ASSERT_TRUE(Ed448Sign(sig, pkey.get(), kMsg, sizeof(kMsg)));
+  EXPECT_TRUE(Ed448Verify(pkey.get(), kMsg, sizeof(kMsg), sig, sizeof(sig)));
+
+  // Two independent keygen calls must produce different keys.
+  EVP_PKEY *raw2 = nullptr;
+  ASSERT_TRUE(EVP_PKEY_keygen(ctx.get(), &raw2));
+  bssl::UniquePtr<EVP_PKEY> pkey2(raw2);
+  ASSERT_TRUE(pkey2);
+
+  uint8_t pub1[57], pub2[57];
+  size_t pub1_len = sizeof(pub1), pub2_len = sizeof(pub2);
+  ASSERT_TRUE(EVP_PKEY_get_raw_public_key(pkey.get(), pub1, &pub1_len));
+  ASSERT_TRUE(EVP_PKEY_get_raw_public_key(pkey2.get(), pub2, &pub2_len));
+  EXPECT_NE(Bytes(pub1, pub1_len), Bytes(pub2, pub2_len));
+}

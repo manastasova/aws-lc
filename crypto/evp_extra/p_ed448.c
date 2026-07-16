@@ -5,11 +5,38 @@
 
 #include <openssl/err.h>
 #include <openssl/mem.h>
+#include <openssl/rand.h>
 
 #include "../fipsmodule/evp/internal.h"
 #include "../internal.h"
 #include "internal.h"
 #include "../curve448/internal.h"
+
+// Ed448 has no parameters to copy.
+static int pkey_ed448_copy(EVP_PKEY_CTX *dst, EVP_PKEY_CTX *src) { return 1; }
+
+static int pkey_ed448_keygen(EVP_PKEY_CTX *ctx, EVP_PKEY *pkey) {
+  ED448_KEY *key = OPENSSL_malloc(sizeof(ED448_KEY));
+  if (key == NULL) {
+    return 0;
+  }
+
+  // Ed448 keys are derived from a random 57-byte seed. Generate the seed and
+  // expand it into the public key and stored seed.
+  uint8_t seed[ED448_SEED_LEN];
+  if (!RAND_bytes(seed, sizeof(seed)) ||
+      !ED448_keypair_from_seed(key->pub, key->seed, seed)) {
+    OPENSSL_cleanse(seed, sizeof(seed));
+    OPENSSL_cleanse(key, sizeof(ED448_KEY));
+    OPENSSL_free(key);
+    return 0;
+  }
+  OPENSSL_cleanse(seed, sizeof(seed));
+  key->has_private = 1;
+
+  evp_pkey_set0(pkey, &ed448_asn1_meth, key);
+  return 1;
+}
 
 static int pkey_ed448_sign_message(EVP_PKEY_CTX *ctx, uint8_t *sig,
                                    size_t *siglen, const uint8_t *tbs,
@@ -54,9 +81,9 @@ static int pkey_ed448_verify_message(EVP_PKEY_CTX *ctx, const uint8_t *sig,
 const EVP_PKEY_METHOD ed448_pkey_meth = {
     EVP_PKEY_ED448,
     NULL /* init */,
-    NULL /* copy */,
+    pkey_ed448_copy,
     NULL /* cleanup */,
-    NULL /* keygen */,
+    pkey_ed448_keygen,
     NULL /* sign_init */,
     NULL /* sign */,
     pkey_ed448_sign_message,

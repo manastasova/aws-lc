@@ -237,7 +237,9 @@ static int ed448_priv_encode_v2(CBB *out, const EVP_PKEY *pkey) {
 
 static int ed448_size(const EVP_PKEY *pkey) { return ED448_SIGNATURE_LEN; }
 
-static int ed448_bits(const EVP_PKEY *pkey) { return 448; }
+// Bit-length of the Ed448 group order (C448_SCALAR_BITS), mirroring how
+// ed25519_bits returns the bit-length of the Ed25519 group order (253).
+static int ed448_bits(const EVP_PKEY *pkey) { return 446; }
 
 const EVP_PKEY_ASN1_METHOD ed448_asn1_meth = {
     EVP_PKEY_ED448,
