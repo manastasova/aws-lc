@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <new>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -86,7 +87,7 @@ TEST(GCMTest, ABI) {
   uint8_t buf[16 * 32];
   OPENSSL_memset(buf, 42, sizeof(buf));
 
-  uint8_t X[16] = {0x92, 0xa3, 0xb3, 0x60, 0xce, 0xda, 0x88, 0x03,
+  alignas(16) uint8_t X[16] = {0x92, 0xa3, 0xb3, 0x60, 0xce, 0xda, 0x88, 0x03,
                    0x78, 0xfe, 0xb2, 0x71, 0xb9, 0xc2, 0x28, 0xf3};
 
   alignas(16) u128 Htable[16];
@@ -194,18 +195,40 @@ TEST(GCMTest, ABI) {
 
 #if defined(OPENSSL_AARCH64) && defined(HW_GCM)
   if (hwaes_capable() && gcm_pmull_capable()) {
-    static const uint8_t kKey[256/8] = {0};
+    static const uint8_t kKey[256 / 8] = {0};
     uint8_t iv[16] = {0};
-
-    for (size_t key_bits = 128; key_bits <= 256; key_bits += 64) {
-      AES_KEY aes_key;
-      aes_hw_set_encrypt_key(kKey, key_bits, &aes_key);
-      CHECK_ABI(aes_gcm_enc_kernel, buf, sizeof(buf) * 8, buf, X, iv, &aes_key,
-                Htable);
-      CHECK_ABI(aes_gcm_dec_kernel, buf, sizeof(buf) * 8, buf, X, iv, &aes_key,
-                Htable);
+    uint8_t out[sizeof(buf)];
+    alignas(16) AES_KEY aes_key;
+    const s2n_bignum_AES_KEY *s2n_key =
+        reinterpret_cast<const s2n_bignum_AES_KEY *>(&aes_key);
+    uint64_t *tag = reinterpret_cast<uint64_t *>(X);
+    const uint64_t *htable = reinterpret_cast<const uint64_t *>(Htable);
+    for (size_t blocks : kBlockCounts) {
+      aes_hw_set_encrypt_key(kKey, 128, &aes_key);
+      CHECK_ABI(aes128_gcm_enc, buf, blocks * 128, out, tag, iv, s2n_key,
+                htable);
+      CHECK_ABI(aes128_gcm_dec, buf, blocks * 128, out, tag, iv, s2n_key,
+                htable);
+      aes_hw_set_encrypt_key(kKey, 256, &aes_key);
+      CHECK_ABI(aes256_gcm_enc, buf, blocks * 128, out, tag, iv, s2n_key,
+                htable);
+      CHECK_ABI(aes256_gcm_dec, buf, blocks * 128, out, tag, iv, s2n_key,
+                htable);
+      if (CRYPTO_is_ARMv8_SHA3_capable()) {
+        aes_hw_set_encrypt_key(kKey, 128, &aes_key);
+        CHECK_ABI(aes128_gcm_enc_alt, buf, blocks * 128, out, tag, iv, s2n_key,
+                  htable);
+        CHECK_ABI(aes128_gcm_dec_alt, buf, blocks * 128, out, tag, iv, s2n_key,
+                  htable);
+        aes_hw_set_encrypt_key(kKey, 256, &aes_key);
+        CHECK_ABI(aes256_gcm_enc_alt, buf, blocks * 128, out, tag, iv, s2n_key,
+                  htable);
+        CHECK_ABI(aes256_gcm_dec_alt, buf, blocks * 128, out, tag, iv, s2n_key,
+                  htable);
+      }
     }
   }
+
 #endif
 
 #if defined(GHASH_ASM_PPC64LE)
@@ -219,3 +242,99 @@ TEST(GCMTest, ABI) {
 #endif  // GHASH_ASM_PPC64LE
 }
 #endif  // SUPPORTS_ABI_TEST && !OPENSSL_NO_ASM && !MY_ASSEMBLER_IS_TOO_OLD_FOR_AVX
+
+#if defined(OPENSSL_AARCH64) && defined(HW_GCM)
+// Compare the imported whole-block path, its scalar remainder, and its
+// in-place/AES-192 fallbacks with the independent generic GCM path.
+TEST(GCMTest, Ctr32Hardware) {
+  if (!hwaes_capable() || !gcm_pmull_capable()) {
+    GTEST_SKIP();
+  }
+  static const size_t kLengths[] = {0,    1,    15,   16,   17,   31,   32,
+                                   33,   63,   64,   65,   127,  128,  129,
+                                   255,  256,  257,  511,  512,  513,  1023,
+                                   1024, 1025, 4095, 4096, 4097};
+  static const uint32_t kCounters[] = {2, UINT32_MAX - 7, UINT32_MAX};
+  uint8_t key_bytes[32], nonce[12], aad[23];
+  for (size_t i = 0; i < sizeof(key_bytes); i++) {
+    key_bytes[i] = static_cast<uint8_t>(13 * i + 1);
+  }
+  for (size_t i = 0; i < sizeof(nonce); i++) {
+    nonce[i] = static_cast<uint8_t>(7 * i + 2);
+  }
+  for (size_t i = 0; i < sizeof(aad); i++) {
+    aad[i] = static_cast<uint8_t>(3 * i + 5);
+  }
+
+  for (unsigned key_bits : {128u, 192u, 256u}) {
+    // AES_KEY needs four-byte alignment. Its public low-level API also accepts
+    // the second position here, which is not aligned for s2n_bignum_AES_KEY.
+    for (size_t key_offset : {size_t{0}, size_t{4}}) {
+      alignas(16) uint8_t key_storage[sizeof(AES_KEY) + 8];
+      AES_KEY *key = new (key_storage + key_offset) AES_KEY;
+      ASSERT_EQ(0, aes_hw_set_encrypt_key(key_bytes, key_bits, key));
+      for (size_t len : kLengths) {
+        std::vector<uint8_t> plaintext(len + 1, 0xa5);
+        for (size_t i = 0; i < len; i++) {
+          plaintext[i] = static_cast<uint8_t>(17 * i + 3);
+        }
+        for (uint32_t counter : kCounters) {
+          auto init_context = [&](GCM128_CONTEXT *ctx) {
+            OPENSSL_memset(ctx, 0, sizeof(*ctx));
+            CRYPTO_gcm128_init_key(&ctx->gcm_key, key, aes_hw_encrypt, 1);
+            CRYPTO_gcm128_setiv(ctx, key, nonce, sizeof(nonce));
+            CRYPTO_store_u32_be(ctx->Yi + 12, counter);
+            ASSERT_TRUE(CRYPTO_gcm128_aad(ctx, aad, sizeof(aad)));
+          };
+          GCM128_CONTEXT reference;
+          init_context(&reference);
+          std::vector<uint8_t> ciphertext(len + 1, 0xa5);
+          ASSERT_TRUE(CRYPTO_gcm128_encrypt(&reference, key, plaintext.data(),
+                                            ciphertext.data(), len));
+          uint8_t expected_tag[16];
+          CRYPTO_gcm128_tag(&reference, expected_tag, sizeof(expected_tag));
+
+          for (bool decrypt : {false, true}) {
+            const auto &input = decrypt ? ciphertext : plaintext;
+            const auto &expected = decrypt ? plaintext : ciphertext;
+            for (bool in_place : {false, true}) {
+              for (bool split_update : {false, true}) {
+                SCOPED_TRACE(::testing::Message()
+                             << "key_bits=" << key_bits
+                             << " key_offset=" << key_offset << " len=" << len
+                             << " counter=" << counter << " decrypt=" << decrypt
+                             << " in_place=" << in_place
+                             << " split_update=" << split_update);
+                GCM128_CONTEXT actual;
+                init_context(&actual);
+                std::vector<uint8_t> out =
+                    in_place ? input : std::vector<uint8_t>(len + 1, 0xa5);
+                const uint8_t *in = in_place ? out.data() : input.data();
+                const size_t first = split_update && len > 17 ? 17 : len;
+                auto update = [&](size_t offset, size_t length) {
+                  return decrypt
+                             ? CRYPTO_gcm128_decrypt_ctr32(
+                                   &actual, key, in + offset, out.data() + offset,
+                                   length, aes_hw_ctr32_encrypt_blocks)
+                             : CRYPTO_gcm128_encrypt_ctr32(
+                                   &actual, key, in + offset, out.data() + offset,
+                                   length, aes_hw_ctr32_encrypt_blocks);
+                };
+                ASSERT_TRUE(update(0, first));
+                if (first != len) {
+                  ASSERT_TRUE(update(first, len - first));
+                }
+                uint8_t actual_tag[16];
+                CRYPTO_gcm128_tag(&actual, actual_tag, sizeof(actual_tag));
+                EXPECT_EQ(Bytes(expected), Bytes(out));
+                EXPECT_EQ(Bytes(expected_tag), Bytes(actual_tag));
+                EXPECT_EQ(Bytes(reference.Yi), Bytes(actual.Yi));
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+#endif  // OPENSSL_AARCH64 && HW_GCM

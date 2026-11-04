@@ -103,78 +103,93 @@ static size_t hw_gcm_decrypt(const uint8_t *in, uint8_t *out, size_t len,
 
 #if defined(HW_GCM) && defined(OPENSSL_AARCH64)
 
+// The imported routines consume round-key bytes, not AES_KEY's rounds field.
+OPENSSL_STATIC_ASSERT(offsetof(AES_KEY, rounds) ==
+                          offsetof(s2n_bignum_AES_KEY, rounds),
+                      aes_gcm_round_key_layout_must_match)
+OPENSSL_STATIC_ASSERT(sizeof(((AES_KEY *)0)->rd_key) ==
+                          sizeof(((s2n_bignum_AES_KEY *)0)->rd_key),
+                      aes_gcm_round_key_size_must_match)
+
+static int s2n_gcm_buffers_supported(const uint8_t *in, uint8_t *out,
+                                    size_t len) {
+  // The imported proofs cover disjoint input/output buffers. In-place calls
+  // continue through the existing CTR and GHASH path below. The eight-block
+  // kernels also use signed input-pointer comparisons.
+  const uint64_t in_addr = (uint64_t)(uintptr_t)in;
+  return !buffers_alias(in, len, out, len) &&
+         in_addr <= INT64_MAX && len <= INT64_MAX - in_addr;
+}
+
 static size_t hw_gcm_encrypt(const uint8_t *in, uint8_t *out, size_t len,
                              const AES_KEY *key, uint8_t ivec[16],
                              uint8_t Xi[16], const u128 Htable[16]) {
   const size_t len_blocks = len & kSizeTWithoutLower4Bits;
-  if (!len_blocks) {
+  if (len_blocks == 0 ||
+      (uintptr_t)key % alignof(s2n_bignum_AES_KEY) != 0 ||
+      !s2n_gcm_buffers_supported(in, out, len_blocks)) {
     return 0;
   }
 
-  // The 8x-unrolled assembly implementation starts outperforming
-  // the 4x-unrolled one starting around input length of 256 bytes
-  // in the case of the EVP API.
-  // In the case of the AEAD API, it can be used for all input lengths
-  // but we are not identifying which API calls the code below.
-  if (CRYPTO_is_ARMv8_GCM_8x_capable() && len >= 256) {
-    switch(key->rounds) {
+  const s2n_bignum_AES_KEY *s2n_key = (const s2n_bignum_AES_KEY *)key;
+  uint64_t *tag = (uint64_t *)Xi;
+  const uint64_t *htable = (const uint64_t *)Htable;
+  const uint64_t len_bits = len_blocks * 8;
+  // Keep the existing CPU policy and crossover for the eight-block path.
+  const int use_8x = CRYPTO_is_ARMv8_GCM_8x_capable() && len >= 256;
+  switch (key->rounds) {
     case 10:
-      aesv8_gcm_8x_enc_128(in, len_blocks * 8, out, Xi, ivec, key, Htable);
-      break;
-    case 12:
-      aesv8_gcm_8x_enc_192(in, len_blocks * 8, out, Xi, ivec, key, Htable);
-      break;
+      if (use_8x) {
+#if defined(BORINGSSL_DISPATCH_TEST)
+        BORINGSSL_function_hit[7] = 1;
+#endif
+        return aes128_gcm_enc_alt(in, len_bits, out, tag, ivec, s2n_key,
+                                  htable);
+      }
+#if defined(BORINGSSL_DISPATCH_TEST)
+      BORINGSSL_function_hit[2] = 1;
+#endif
+      return aes128_gcm_enc(in, len_bits, out, tag, ivec, s2n_key, htable);
     case 14:
-      aesv8_gcm_8x_enc_256(in, len_blocks * 8, out, Xi, ivec, key, Htable);
-      break;
+      return use_8x
+                 ? aes256_gcm_enc_alt(in, len_bits, out, tag, ivec, s2n_key,
+                                      htable)
+                 : aes256_gcm_enc(in, len_bits, out, tag, ivec, s2n_key, htable);
     default:
-      // The subsequent logic after returning can process
-      // the input or return an error.
+      // AES-192 uses the existing CTR and GHASH path below.
       return 0;
-      break;
-    }
-  } else {
-    aes_gcm_enc_kernel(in, len_blocks * 8, out, Xi, ivec, key, Htable);
   }
-
-  return len_blocks;
 }
 
 static size_t hw_gcm_decrypt(const uint8_t *in, uint8_t *out, size_t len,
                              const AES_KEY *key, uint8_t ivec[16],
                              uint8_t Xi[16], const u128 Htable[16]) {
   const size_t len_blocks = len & kSizeTWithoutLower4Bits;
-  if (!len_blocks) {
+  if (len_blocks == 0 ||
+      (uintptr_t)key % alignof(s2n_bignum_AES_KEY) != 0 ||
+      !s2n_gcm_buffers_supported(in, out, len_blocks)) {
     return 0;
   }
 
-  // The 8x-unrolled assembly implementation starts outperforming
-  // the 4x-unrolled one starting around input length of 256 bytes
-  // in the case of the EVP API.
-  // In the case of the AEAD API, it can be used for all input lengths
-  // but we are not identifying which API calls the code below.
-  if (CRYPTO_is_ARMv8_GCM_8x_capable() && len >= 256) {
-    switch(key->rounds) {
+  const s2n_bignum_AES_KEY *s2n_key = (const s2n_bignum_AES_KEY *)key;
+  uint64_t *tag = (uint64_t *)Xi;
+  const uint64_t *htable = (const uint64_t *)Htable;
+  const uint64_t len_bits = len_blocks * 8;
+  const int use_8x = CRYPTO_is_ARMv8_GCM_8x_capable() && len >= 256;
+  switch (key->rounds) {
     case 10:
-      aesv8_gcm_8x_dec_128(in, len_blocks * 8, out, Xi, ivec, key, Htable);
-      break;
-    case 12:
-      aesv8_gcm_8x_dec_192(in, len_blocks * 8, out, Xi, ivec, key, Htable);
-      break;
+      return use_8x
+                 ? aes128_gcm_dec_alt(in, len_bits, out, tag, ivec, s2n_key,
+                                      htable)
+                 : aes128_gcm_dec(in, len_bits, out, tag, ivec, s2n_key, htable);
     case 14:
-      aesv8_gcm_8x_dec_256(in, len_blocks * 8, out, Xi, ivec, key, Htable);
-      break;
+      return use_8x
+                 ? aes256_gcm_dec_alt(in, len_bits, out, tag, ivec, s2n_key,
+                                      htable)
+                 : aes256_gcm_dec(in, len_bits, out, tag, ivec, s2n_key, htable);
     default:
-      // The subsequent logic after returning can process
-      // the input or return an error.
       return 0;
-      break;
-    }
-  } else {
-    aes_gcm_dec_kernel(in, len_blocks * 8, out, Xi, ivec, key, Htable);
   }
-
-  return len_blocks;
 }
 
 #endif  // HW_GCM && AARCH64

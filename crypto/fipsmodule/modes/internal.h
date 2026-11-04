@@ -304,40 +304,13 @@ void gcm_gmult_neon(uint8_t Xi[16], const u128 Htable[16]);
 void gcm_ghash_neon(uint8_t Xi[16], const u128 Htable[16], const uint8_t *inp,
                     size_t len);
 
-#if defined(OPENSSL_AARCH64)
+#if defined(OPENSSL_AARCH64) && !defined(OPENSSL_WINDOWS)
 #define HW_GCM
-// Note that in the argument list of the following functions,
-// - the length is provided in bits (not bytes)
-// - the order of arguments is different from that of |aesni_gcm_encrypt|.
+// Imported whole-block AES-GCM kernels. The length argument is in bits and
+// the return value is the number of bytes processed. Their round-key and
+// GHASH table layouts match the AES_KEY and gcm_init_v8 layouts used here.
+#include "../../../third_party/s2n-bignum/s2n-bignum_aws-lc.h"
 
-// These functions are defined in aesv8-gcm-armv8.pl.
-void aes_gcm_enc_kernel(const uint8_t *in, uint64_t in_bits, void *out,
-                        void *Xi, uint8_t *ivec, const AES_KEY *key,
-                        const u128 Htable[16]);
-void aes_gcm_dec_kernel(const uint8_t *in, uint64_t in_bits, void *out,
-                        void *Xi, uint8_t *ivec, const AES_KEY *key,
-                        const u128 Htable[16]);
-
-// These functions are defined in aesv8-gcm-armv8-unroll8.pl.
-// They take input length in BITS and return number of BYTES processed.
-size_t aesv8_gcm_8x_enc_128(const uint8_t *in, size_t bit_len, uint8_t *out,
-                            uint8_t *Xi, uint8_t ivec[16], const AES_KEY *key,
-                            const u128 Htable[16]);
-size_t aesv8_gcm_8x_dec_128(const uint8_t *in, size_t bit_len, uint8_t *out,
-                            uint8_t *Xi, uint8_t ivec[16], const AES_KEY *key,
-                            const u128 Htable[16]);
-size_t aesv8_gcm_8x_enc_192(const uint8_t *in, size_t bit_len, uint8_t *out,
-                            uint8_t *Xi, uint8_t ivec[16], const AES_KEY *key,
-                            const u128 Htable[16]);
-size_t aesv8_gcm_8x_dec_192(const uint8_t *in, size_t bit_len, uint8_t *out,
-                            uint8_t *Xi, uint8_t ivec[16], const AES_KEY *key,
-                            const u128 Htable[16]);
-size_t aesv8_gcm_8x_enc_256(const uint8_t *in, size_t bit_len, uint8_t *out,
-                            uint8_t *Xi, uint8_t ivec[16], const AES_KEY *key,
-                            const u128 Htable[16]);
-size_t aesv8_gcm_8x_dec_256(const uint8_t *in, size_t bit_len, uint8_t *out,
-                            uint8_t *Xi, uint8_t ivec[16], const AES_KEY *key,
-                            const u128 Htable[16]);
 #endif
 
 #elif defined(OPENSSL_PPC64LE)

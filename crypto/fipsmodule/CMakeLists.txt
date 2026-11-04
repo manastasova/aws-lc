@@ -321,6 +321,18 @@ if((((ARCH STREQUAL "x86_64") AND NOT MY_ASSEMBLER_IS_TOO_OLD_FOR_ADX_AVX2) OR
                 ${S2N_BIGNUM_DIR}/generic/bignum_copy_row_from_table_32.S
     )
 
+    # AES-GCM whole-block kernels imported from s2n-bignum.
+    list(APPEND BCM_ASM_SOURCES
+      ${S2N_BIGNUM_DIR}/aes_gcm/aes128_gcm_enc.S
+      ${S2N_BIGNUM_DIR}/aes_gcm/aes128_gcm_dec.S
+      ${S2N_BIGNUM_DIR}/aes_gcm/aes128_gcm_enc_alt.S
+      ${S2N_BIGNUM_DIR}/aes_gcm/aes128_gcm_dec_alt.S
+      ${S2N_BIGNUM_DIR}/aes_gcm/aes256_gcm_enc.S
+      ${S2N_BIGNUM_DIR}/aes_gcm/aes256_gcm_dec.S
+      ${S2N_BIGNUM_DIR}/aes_gcm/aes256_gcm_enc_alt.S
+      ${S2N_BIGNUM_DIR}/aes_gcm/aes256_gcm_dec_alt.S
+    )
+
     #
     # Keccak assembly from s2n-bignum/mlkem-native
     #

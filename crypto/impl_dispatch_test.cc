@@ -72,8 +72,10 @@ class ImplDispatchTest : public ::testing::Test {
 #elif defined(OPENSSL_AARCH64)
     aes_hw_ = CRYPTO_is_ARMv8_AES_capable();
     aes_vpaes_ = CRYPTO_is_NEON_capable();
+#if !defined(OPENSSL_WINDOWS)
     aes_gcm_pmull_ = CRYPTO_is_ARMv8_PMULL_capable();
     aes_gcm_8x_ = CRYPTO_is_ARMv8_GCM_8x_capable();
+#endif
     sha_ext_ = OPENSSL_armcap_P & ARMV8_SHA256;
     sha_512_ext_ = OPENSSL_armcap_P & ARMV8_SHA512;
     sha3_ext_ = CRYPTO_is_ARMv8_SHA3_capable();
@@ -163,8 +165,8 @@ constexpr size_t kFlag_RSAZ_mod_exp_avx512_x2 = 8;
 constexpr size_t kFlag_sha3_keccak_f1600 = 9;
 constexpr size_t kFlag_sha3_keccak4_f1600_alt = 10;
 #else // AARCH64
-constexpr size_t kFlag_aes_gcm_enc_kernel = 2;
-constexpr size_t kFlag_aesv8_gcm_8x_enc_128 = 7;
+constexpr size_t kFlag_aes128_gcm_enc = 2;
+constexpr size_t kFlag_aes128_gcm_enc_alt = 7;
 constexpr size_t kFlag_sha512_hw = 8;
 constexpr size_t kFlag_KeccakF1600_hw = 9;
 constexpr size_t kFlag_sha3_keccak_f1600 = 10;
@@ -196,9 +198,9 @@ TEST_F(ImplDispatchTest, AEAD_AES_GCM) {
 #else // AARCH64
           {kFlag_aes_hw_ctr32_encrypt_blocks, aes_hw_ &&
            !aes_gcm_pmull_ && !aes_gcm_8x_},
-          {kFlag_aes_gcm_enc_kernel, aes_hw_ &&
+          {kFlag_aes128_gcm_enc, aes_hw_ &&
            aes_gcm_pmull_ && !aes_gcm_8x_},
-          {kFlag_aesv8_gcm_8x_enc_128, aes_hw_ &&
+          {kFlag_aes128_gcm_enc_alt, aes_hw_ &&
            aes_gcm_pmull_ && aes_gcm_8x_}
 #endif
       },
