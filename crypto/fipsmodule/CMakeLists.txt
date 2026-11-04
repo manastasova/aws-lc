@@ -90,8 +90,6 @@ if(ARCH STREQUAL "aarch64")
     BCM_ASM_SOURCES
 
     aesv8-armx.${ASM_EXT}
-    aesv8-gcm-armv8.${ASM_EXT}
-    aesv8-gcm-armv8-unroll8.${ASM_EXT}
     armv8-mont.${ASM_EXT}
     bn-armv8.${ASM_EXT}
     ghash-neon-armv8.${ASM_EXT}
@@ -145,8 +143,6 @@ if(PERL_EXECUTABLE)
   perlasm(aesni-x86.${ASM_EXT} aes/asm/aesni-x86.pl)
   perlasm(aesp8-ppc.${ASM_EXT} aes/asm/aesp8-ppc.pl)
   perlasm(aesv8-armx.${ASM_EXT} aes/asm/aesv8-armx.pl)
-  perlasm(aesv8-gcm-armv8.${ASM_EXT} modes/asm/aesv8-gcm-armv8.pl)
-  perlasm(aesv8-gcm-armv8-unroll8.${ASM_EXT} modes/asm/aesv8-gcm-armv8-unroll8.pl)
   perlasm(armv4-mont.${ASM_EXT} bn/asm/armv4-mont.pl)
   perlasm(armv8-mont.${ASM_EXT} bn/asm/armv8-mont.pl)
   perlasm(bn-586.${ASM_EXT} bn/asm/bn-586.pl)
@@ -321,18 +317,6 @@ if((((ARCH STREQUAL "x86_64") AND NOT MY_ASSEMBLER_IS_TOO_OLD_FOR_ADX_AVX2) OR
                 ${S2N_BIGNUM_DIR}/generic/bignum_copy_row_from_table_32.S
     )
 
-    # AES-GCM whole-block kernels imported from s2n-bignum.
-    list(APPEND BCM_ASM_SOURCES
-      ${S2N_BIGNUM_DIR}/aes_gcm/aes128_gcm_enc.S
-      ${S2N_BIGNUM_DIR}/aes_gcm/aes128_gcm_dec.S
-      ${S2N_BIGNUM_DIR}/aes_gcm/aes128_gcm_enc_alt.S
-      ${S2N_BIGNUM_DIR}/aes_gcm/aes128_gcm_dec_alt.S
-      ${S2N_BIGNUM_DIR}/aes_gcm/aes256_gcm_enc.S
-      ${S2N_BIGNUM_DIR}/aes_gcm/aes256_gcm_dec.S
-      ${S2N_BIGNUM_DIR}/aes_gcm/aes256_gcm_enc_alt.S
-      ${S2N_BIGNUM_DIR}/aes_gcm/aes256_gcm_dec_alt.S
-    )
-
     #
     # Keccak assembly from s2n-bignum/mlkem-native
     #
@@ -460,14 +444,72 @@ if((((ARCH STREQUAL "x86_64") AND NOT MY_ASSEMBLER_IS_TOO_OLD_FOR_ADX_AVX2) OR
 
 endif()
 
-# Include s2n-bignum files in Windows AArch64 which replace similar implementation that was available on Windows
-# TODO: Attempt more AArch64 s2n-bignum files in Windows build
+# Include the AES implementations on all AArch64 platforms, including Windows.
 if(ARCH STREQUAL "aarch64")
+  set(S2N_BIGNUM_GCM_DIR "${AWSLC_SOURCE_DIR}/third_party/s2n-bignum/s2n-bignum-imported/arm/aes_gcm")
   set(S2N_BIGNUM_INCLUDE_DIR "${AWSLC_SOURCE_DIR}/third_party/s2n-bignum/s2n-bignum-imported/include")
+  # Probe the actual assembly compiler, including Windows' Clang route, without
+  # requiring C inline assembly or a link step. A cached OFF value forces x4.
+  if(NOT OPENSSL_NO_ASM AND NOT DEFINED S2N_BIGNUM_GCM_8X_ASM)
+    set(S2N_BIGNUM_GCM_PROBE "${AWSLC_SOURCE_DIR}/tests/compiler_features_tests/aarch64_gcm_sha3.S")
+    set(S2N_BIGNUM_GCM_PROBE_OBJECT "${CMAKE_CURRENT_BINARY_DIR}/aarch64_gcm_sha3.o")
+    if(WIN32 AND CMAKE_GENERATOR MATCHES "Visual Studio")
+      execute_process(
+        COMMAND "${CMAKE_ASM_COMPILER}" --target=arm64-pc-windows-msvc
+                /c /o "${S2N_BIGNUM_GCM_PROBE_OBJECT}" "${S2N_BIGNUM_GCM_PROBE}"
+        RESULT_VARIABLE S2N_BIGNUM_GCM_PROBE_RESULT
+        OUTPUT_QUIET ERROR_QUIET)
+    else()
+      string(TOUPPER "${CMAKE_BUILD_TYPE}" S2N_BIGNUM_GCM_PROBE_CONFIG)
+      set(S2N_BIGNUM_GCM_PROBE_FLAGS
+          "${CMAKE_ASM_COMPILER_ARG1} ${CMAKE_ASM_FLAGS} ${CMAKE_ASM_FLAGS_${S2N_BIGNUM_GCM_PROBE_CONFIG}}")
+      if(WIN32)
+        separate_arguments(S2N_BIGNUM_GCM_PROBE_FLAGS WINDOWS_COMMAND "${S2N_BIGNUM_GCM_PROBE_FLAGS}")
+      else()
+        separate_arguments(S2N_BIGNUM_GCM_PROBE_FLAGS UNIX_COMMAND "${S2N_BIGNUM_GCM_PROBE_FLAGS}")
+      endif()
+      if(CMAKE_ASM_COMPILER_TARGET)
+        list(APPEND S2N_BIGNUM_GCM_PROBE_FLAGS "--target=${CMAKE_ASM_COMPILER_TARGET}")
+      endif()
+      if(APPLE)
+        foreach(S2N_BIGNUM_GCM_PROBE_ARCH ${CMAKE_OSX_ARCHITECTURES})
+          list(APPEND S2N_BIGNUM_GCM_PROBE_FLAGS -arch "${S2N_BIGNUM_GCM_PROBE_ARCH}")
+        endforeach()
+        if(CMAKE_OSX_SYSROOT)
+          list(APPEND S2N_BIGNUM_GCM_PROBE_FLAGS -isysroot "${CMAKE_OSX_SYSROOT}")
+        endif()
+      endif()
+      execute_process(
+        COMMAND "${CMAKE_ASM_COMPILER}" ${S2N_BIGNUM_GCM_PROBE_FLAGS}
+                -c "${S2N_BIGNUM_GCM_PROBE}" -o "${S2N_BIGNUM_GCM_PROBE_OBJECT}"
+        RESULT_VARIABLE S2N_BIGNUM_GCM_PROBE_RESULT
+        OUTPUT_QUIET ERROR_QUIET)
+    endif()
+    if(S2N_BIGNUM_GCM_PROBE_RESULT STREQUAL "0")
+      set(S2N_BIGNUM_GCM_8X_ASM ON CACHE BOOL "Assembler supports s2n-bignum 8x AES-GCM")
+    else()
+      set(S2N_BIGNUM_GCM_8X_ASM OFF CACHE BOOL "Assembler supports s2n-bignum 8x AES-GCM")
+    endif()
+    file(REMOVE "${S2N_BIGNUM_GCM_PROBE_OBJECT}")
+  endif()
   list(APPEND BCM_ASM_SOURCES
           ${AWSLC_SOURCE_DIR}/third_party/s2n-bignum/s2n-bignum-to-be-imported/arm/aes/aes-xts-enc.S
           ${AWSLC_SOURCE_DIR}/third_party/s2n-bignum/s2n-bignum-to-be-imported/arm/aes/aes-xts-dec.S
+          ${S2N_BIGNUM_GCM_DIR}/aes128_gcm_enc.S
+          ${S2N_BIGNUM_GCM_DIR}/aes128_gcm_dec.S
+          ${S2N_BIGNUM_GCM_DIR}/aes256_gcm_enc.S
+          ${S2N_BIGNUM_GCM_DIR}/aes256_gcm_dec.S
   )
+  if(NOT OPENSSL_NO_ASM AND S2N_BIGNUM_GCM_8X_ASM)
+    add_definitions(-DS2N_BIGNUM_GCM_8X_ASM)
+    list(APPEND BCM_ASM_SOURCES
+          ${S2N_BIGNUM_GCM_DIR}/aes128_gcm_enc_alt.S
+          ${S2N_BIGNUM_GCM_DIR}/aes128_gcm_dec_alt.S
+          ${S2N_BIGNUM_GCM_DIR}/aes256_gcm_enc_alt.S
+          ${S2N_BIGNUM_GCM_DIR}/aes256_gcm_dec_alt.S
+    )
+  endif()
+  message(STATUS "s2n-bignum 8x AES-GCM assembly: ${S2N_BIGNUM_GCM_8X_ASM}")
 endif()
 
 # mlkem-native assembly files can be compiled on Unix platforms for x86_64 and arm64 only.

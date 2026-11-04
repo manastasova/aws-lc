@@ -214,6 +214,7 @@ TEST(GCMTest, ABI) {
                 htable);
       CHECK_ABI(aes256_gcm_dec, buf, blocks * 128, out, tag, iv, s2n_key,
                 htable);
+#if defined(S2N_BIGNUM_GCM_8X_ASM)
       if (CRYPTO_is_ARMv8_SHA3_capable()) {
         aes_hw_set_encrypt_key(kKey, 128, &aes_key);
         CHECK_ABI(aes128_gcm_enc_alt, buf, blocks * 128, out, tag, iv, s2n_key,
@@ -226,6 +227,7 @@ TEST(GCMTest, ABI) {
         CHECK_ABI(aes256_gcm_dec_alt, buf, blocks * 128, out, tag, iv, s2n_key,
                   htable);
       }
+#endif
     }
   }
 

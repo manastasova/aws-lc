@@ -72,8 +72,8 @@ class ImplDispatchTest : public ::testing::Test {
 #elif defined(OPENSSL_AARCH64)
     aes_hw_ = CRYPTO_is_ARMv8_AES_capable();
     aes_vpaes_ = CRYPTO_is_NEON_capable();
-#if !defined(OPENSSL_WINDOWS)
     aes_gcm_pmull_ = CRYPTO_is_ARMv8_PMULL_capable();
+#if defined(S2N_BIGNUM_GCM_8X_ASM)
     aes_gcm_8x_ = CRYPTO_is_ARMv8_GCM_8x_capable();
 #endif
     sha_ext_ = OPENSSL_armcap_P & ARMV8_SHA256;
@@ -197,7 +197,7 @@ TEST_F(ImplDispatchTest, AEAD_AES_GCM) {
            vaes_vpclmulqdq_},
 #else // AARCH64
           {kFlag_aes_hw_ctr32_encrypt_blocks, aes_hw_ &&
-           !aes_gcm_pmull_ && !aes_gcm_8x_},
+           !aes_gcm_pmull_},
           {kFlag_aes128_gcm_enc, aes_hw_ &&
            aes_gcm_pmull_ && !aes_gcm_8x_},
           {kFlag_aes128_gcm_enc_alt, aes_hw_ &&

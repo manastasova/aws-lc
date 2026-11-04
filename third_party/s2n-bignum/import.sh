@@ -92,6 +92,21 @@ do
    echo "Added ASM prefix header include to ${INTERNAL_HEADER}"
 done
 
+# Keep the imported AArch64 assembly usable by Windows' COFF assembler without
+# changing its instructions or call-frame annotations. These directives and the
+# GNU BTI property note are specific to ELF.
+echo "Adapting AArch64 assembly directives for Windows COFF ..."
+INTERNAL_HEADER="${SRC}/include/_internal_s2n_bignum_arm.h"
+TEMP_FILE=$(mktemp)
+perl -0pe '
+  s/#   else\n(#      define S2N_BN_SYM_PRIVACY_DIRECTIVE\(name\) \.hidden S2N_BN_SYMBOL\(name\))/#   elif !defined(_WIN32)\n$1\n#   else\n#      define S2N_BN_SYM_PRIVACY_DIRECTIVE(name) \/* Not used in COFF *\//;
+  s/#ifdef __APPLE__\n(#   define S2N_BN_FUNCTION_TYPE_DIRECTIVE\(name\)) \/\* Not used in Mach-O \*\//#if defined(__APPLE__) || defined(_WIN32)\n$1 \/* Not used in Mach-O or COFF *\//;
+  s/#ifdef __APPLE__\n(#   define S2N_BN_SIZE_DIRECTIVE\(name\)) \/\* Not used in Mach-O \*\//#if defined(__APPLE__) || defined(_WIN32)\n$1 \/* Not used in Mach-O or COFF *\//;
+  s/#   ifndef __APPLE__\n(        \.pushsection \.note\.gnu\.property)/#   if defined(__ELF__)\n$1/;
+' "${INTERNAL_HEADER}" > "${TEMP_FILE}"
+cat "${TEMP_FILE}" > "${INTERNAL_HEADER}"
+rm -f "${TEMP_FILE}"
+
 # Keep the Curve25519 and Ed25519 tables inside the macOS FIPS integrity boundary.
 # AWS-LC hashes __TEXT,__const, not the __DATA,__const used by .const_data.
 echo "Moving x86 and ARM Mach-O constants to __TEXT,__const ..."

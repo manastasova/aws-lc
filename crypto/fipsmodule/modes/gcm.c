@@ -136,9 +136,12 @@ static size_t hw_gcm_encrypt(const uint8_t *in, uint8_t *out, size_t len,
   const uint64_t *htable = (const uint64_t *)Htable;
   const uint64_t len_bits = len_blocks * 8;
   // Keep the existing CPU policy and crossover for the eight-block path.
+#if defined(S2N_BIGNUM_GCM_8X_ASM)
   const int use_8x = CRYPTO_is_ARMv8_GCM_8x_capable() && len >= 256;
+#endif
   switch (key->rounds) {
     case 10:
+#if defined(S2N_BIGNUM_GCM_8X_ASM)
       if (use_8x) {
 #if defined(BORINGSSL_DISPATCH_TEST)
         BORINGSSL_function_hit[7] = 1;
@@ -146,15 +149,19 @@ static size_t hw_gcm_encrypt(const uint8_t *in, uint8_t *out, size_t len,
         return aes128_gcm_enc_alt(in, len_bits, out, tag, ivec, s2n_key,
                                   htable);
       }
+#endif
 #if defined(BORINGSSL_DISPATCH_TEST)
       BORINGSSL_function_hit[2] = 1;
 #endif
       return aes128_gcm_enc(in, len_bits, out, tag, ivec, s2n_key, htable);
     case 14:
-      return use_8x
-                 ? aes256_gcm_enc_alt(in, len_bits, out, tag, ivec, s2n_key,
-                                      htable)
-                 : aes256_gcm_enc(in, len_bits, out, tag, ivec, s2n_key, htable);
+#if defined(S2N_BIGNUM_GCM_8X_ASM)
+      if (use_8x) {
+        return aes256_gcm_enc_alt(in, len_bits, out, tag, ivec, s2n_key,
+                                  htable);
+      }
+#endif
+      return aes256_gcm_enc(in, len_bits, out, tag, ivec, s2n_key, htable);
     default:
       // AES-192 uses the existing CTR and GHASH path below.
       return 0;
@@ -175,18 +182,26 @@ static size_t hw_gcm_decrypt(const uint8_t *in, uint8_t *out, size_t len,
   uint64_t *tag = (uint64_t *)Xi;
   const uint64_t *htable = (const uint64_t *)Htable;
   const uint64_t len_bits = len_blocks * 8;
+#if defined(S2N_BIGNUM_GCM_8X_ASM)
   const int use_8x = CRYPTO_is_ARMv8_GCM_8x_capable() && len >= 256;
+#endif
   switch (key->rounds) {
     case 10:
-      return use_8x
-                 ? aes128_gcm_dec_alt(in, len_bits, out, tag, ivec, s2n_key,
-                                      htable)
-                 : aes128_gcm_dec(in, len_bits, out, tag, ivec, s2n_key, htable);
+#if defined(S2N_BIGNUM_GCM_8X_ASM)
+      if (use_8x) {
+        return aes128_gcm_dec_alt(in, len_bits, out, tag, ivec, s2n_key,
+                                  htable);
+      }
+#endif
+      return aes128_gcm_dec(in, len_bits, out, tag, ivec, s2n_key, htable);
     case 14:
-      return use_8x
-                 ? aes256_gcm_dec_alt(in, len_bits, out, tag, ivec, s2n_key,
-                                      htable)
-                 : aes256_gcm_dec(in, len_bits, out, tag, ivec, s2n_key, htable);
+#if defined(S2N_BIGNUM_GCM_8X_ASM)
+      if (use_8x) {
+        return aes256_gcm_dec_alt(in, len_bits, out, tag, ivec, s2n_key,
+                                  htable);
+      }
+#endif
+      return aes256_gcm_dec(in, len_bits, out, tag, ivec, s2n_key, htable);
     default:
       return 0;
   }

@@ -304,7 +304,7 @@ void gcm_gmult_neon(uint8_t Xi[16], const u128 Htable[16]);
 void gcm_ghash_neon(uint8_t Xi[16], const u128 Htable[16], const uint8_t *inp,
                     size_t len);
 
-#if defined(OPENSSL_AARCH64) && !defined(OPENSSL_WINDOWS)
+#if defined(OPENSSL_AARCH64)
 #define HW_GCM
 // Imported whole-block AES-GCM kernels. The length argument is in bits and
 // the return value is the number of bytes processed. Their round-key and
