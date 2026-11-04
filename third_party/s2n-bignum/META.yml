@@ -1,5 +1,5 @@
 name: s2n-bignum-imported
-source: awslabs/s2n-bignum.git
-commit: 4d1356a7470663c752660a59375dc3a9ef548428
-target: main
-imported-at: 2026-10-15T19:21:12+0000
+source: manastasova/s2n-bignum-dev.git
+commit: eed074e5fd077b424e59561a3527f38ede36d7f4
+target: aes-128-gcm-x8-encrypt-clean
+imported-at: 2026-11-04T17:12:14+0000
