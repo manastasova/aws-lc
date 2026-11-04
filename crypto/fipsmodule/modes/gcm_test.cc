@@ -214,8 +214,13 @@ TEST(GCMTest, ABI) {
                 htable);
       CHECK_ABI(aes256_gcm_dec, buf, blocks * 128, out, tag, iv, s2n_key,
                 htable);
-#if defined(S2N_BIGNUM_GCM_8X_ASM)
+      aes_hw_set_encrypt_key(kKey, 192, &aes_key);
+      CHECK_ABI(aes_gcm_enc_kernel, buf, blocks * 128, buf, X, iv, &aes_key,
+                Htable);
+      CHECK_ABI(aes_gcm_dec_kernel, buf, blocks * 128, buf, X, iv, &aes_key,
+                Htable);
       if (CRYPTO_is_ARMv8_SHA3_capable()) {
+#if defined(OPENSSL_WINDOWS) || defined(MY_ASSEMBLER_SUPPORTS_NEON_SHA3_EXTENSION)
         aes_hw_set_encrypt_key(kKey, 128, &aes_key);
         CHECK_ABI(aes128_gcm_enc_alt, buf, blocks * 128, out, tag, iv, s2n_key,
                   htable);
@@ -226,8 +231,13 @@ TEST(GCMTest, ABI) {
                   htable);
         CHECK_ABI(aes256_gcm_dec_alt, buf, blocks * 128, out, tag, iv, s2n_key,
                   htable);
-      }
 #endif
+        aes_hw_set_encrypt_key(kKey, 192, &aes_key);
+        CHECK_ABI(aesv8_gcm_8x_enc_192, buf, blocks * 128, buf, X, iv, &aes_key,
+                  Htable);
+        CHECK_ABI(aesv8_gcm_8x_dec_192, buf, blocks * 128, buf, X, iv, &aes_key,
+                  Htable);
+      }
     }
   }
 
@@ -246,8 +256,8 @@ TEST(GCMTest, ABI) {
 #endif  // SUPPORTS_ABI_TEST && !OPENSSL_NO_ASM && !MY_ASSEMBLER_IS_TOO_OLD_FOR_AVX
 
 #if defined(OPENSSL_AARCH64) && defined(HW_GCM)
-// Compare the imported whole-block path, its scalar remainder, and its
-// in-place/AES-192 fallbacks with the independent generic GCM path.
+// Compare the imported AES-128/256 and retained AES-192 paths, their scalar
+// remainders, and in-place calls with the independent generic GCM path.
 TEST(GCMTest, Ctr32Hardware) {
   if (!hwaes_capable() || !gcm_pmull_capable()) {
     GTEST_SKIP();
@@ -322,7 +332,22 @@ TEST(GCMTest, Ctr32Hardware) {
                                    &actual, key, in + offset, out.data() + offset,
                                    length, aes_hw_ctr32_encrypt_blocks);
                 };
+#if defined(BORINGSSL_DISPATCH_TEST)
+                const bool check_aes192_dispatch =
+                    key_bits == 192 && key_offset == 4 && len == 128 &&
+                    counter == 2 && !decrypt && in_place && !split_update;
+                if (check_aes192_dispatch) {
+                  BORINGSSL_function_hit[2] = 0;
+                  BORINGSSL_function_hit[0] = 0;
+                }
+#endif
                 ASSERT_TRUE(update(0, first));
+#if defined(BORINGSSL_DISPATCH_TEST)
+                if (check_aes192_dispatch) {
+                  EXPECT_EQ(1u, BORINGSSL_function_hit[2]);
+                  EXPECT_EQ(0u, BORINGSSL_function_hit[0]);
+                }
+#endif
                 if (first != len) {
                   ASSERT_TRUE(update(first, len - first));
                 }

@@ -73,7 +73,7 @@ class ImplDispatchTest : public ::testing::Test {
     aes_hw_ = CRYPTO_is_ARMv8_AES_capable();
     aes_vpaes_ = CRYPTO_is_NEON_capable();
     aes_gcm_pmull_ = CRYPTO_is_ARMv8_PMULL_capable();
-#if defined(S2N_BIGNUM_GCM_8X_ASM)
+#if defined(OPENSSL_WINDOWS) || defined(MY_ASSEMBLER_SUPPORTS_NEON_SHA3_EXTENSION)
     aes_gcm_8x_ = CRYPTO_is_ARMv8_GCM_8x_capable();
 #endif
     sha_ext_ = OPENSSL_armcap_P & ARMV8_SHA256;

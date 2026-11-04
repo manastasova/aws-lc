@@ -125,8 +125,20 @@ static size_t hw_gcm_encrypt(const uint8_t *in, uint8_t *out, size_t len,
                              const AES_KEY *key, uint8_t ivec[16],
                              uint8_t Xi[16], const u128 Htable[16]) {
   const size_t len_blocks = len & kSizeTWithoutLower4Bits;
-  if (len_blocks == 0 ||
-      (uintptr_t)key % alignof(s2n_bignum_AES_KEY) != 0 ||
+  if (len_blocks == 0) {
+    return 0;
+  }
+  // Keep the existing CPU policy and crossover for the eight-block path.
+  const int use_8x = CRYPTO_is_ARMv8_GCM_8x_capable() && len >= 256;
+  if (key->rounds == 12) {
+    if (use_8x) {
+      aesv8_gcm_8x_enc_192(in, len_blocks * 8, out, Xi, ivec, key, Htable);
+    } else {
+      aes_gcm_enc_kernel(in, len_blocks * 8, out, Xi, ivec, key, Htable);
+    }
+    return len_blocks;
+  }
+  if ((uintptr_t)key % alignof(s2n_bignum_AES_KEY) != 0 ||
       !s2n_gcm_buffers_supported(in, out, len_blocks)) {
     return 0;
   }
@@ -135,13 +147,9 @@ static size_t hw_gcm_encrypt(const uint8_t *in, uint8_t *out, size_t len,
   uint64_t *tag = (uint64_t *)Xi;
   const uint64_t *htable = (const uint64_t *)Htable;
   const uint64_t len_bits = len_blocks * 8;
-  // Keep the existing CPU policy and crossover for the eight-block path.
-#if defined(S2N_BIGNUM_GCM_8X_ASM)
-  const int use_8x = CRYPTO_is_ARMv8_GCM_8x_capable() && len >= 256;
-#endif
   switch (key->rounds) {
     case 10:
-#if defined(S2N_BIGNUM_GCM_8X_ASM)
+#if defined(OPENSSL_WINDOWS) || defined(MY_ASSEMBLER_SUPPORTS_NEON_SHA3_EXTENSION)
       if (use_8x) {
 #if defined(BORINGSSL_DISPATCH_TEST)
         BORINGSSL_function_hit[7] = 1;
@@ -155,7 +163,7 @@ static size_t hw_gcm_encrypt(const uint8_t *in, uint8_t *out, size_t len,
 #endif
       return aes128_gcm_enc(in, len_bits, out, tag, ivec, s2n_key, htable);
     case 14:
-#if defined(S2N_BIGNUM_GCM_8X_ASM)
+#if defined(OPENSSL_WINDOWS) || defined(MY_ASSEMBLER_SUPPORTS_NEON_SHA3_EXTENSION)
       if (use_8x) {
         return aes256_gcm_enc_alt(in, len_bits, out, tag, ivec, s2n_key,
                                   htable);
@@ -163,7 +171,6 @@ static size_t hw_gcm_encrypt(const uint8_t *in, uint8_t *out, size_t len,
 #endif
       return aes256_gcm_enc(in, len_bits, out, tag, ivec, s2n_key, htable);
     default:
-      // AES-192 uses the existing CTR and GHASH path below.
       return 0;
   }
 }
@@ -172,8 +179,19 @@ static size_t hw_gcm_decrypt(const uint8_t *in, uint8_t *out, size_t len,
                              const AES_KEY *key, uint8_t ivec[16],
                              uint8_t Xi[16], const u128 Htable[16]) {
   const size_t len_blocks = len & kSizeTWithoutLower4Bits;
-  if (len_blocks == 0 ||
-      (uintptr_t)key % alignof(s2n_bignum_AES_KEY) != 0 ||
+  if (len_blocks == 0) {
+    return 0;
+  }
+  const int use_8x = CRYPTO_is_ARMv8_GCM_8x_capable() && len >= 256;
+  if (key->rounds == 12) {
+    if (use_8x) {
+      aesv8_gcm_8x_dec_192(in, len_blocks * 8, out, Xi, ivec, key, Htable);
+    } else {
+      aes_gcm_dec_kernel(in, len_blocks * 8, out, Xi, ivec, key, Htable);
+    }
+    return len_blocks;
+  }
+  if ((uintptr_t)key % alignof(s2n_bignum_AES_KEY) != 0 ||
       !s2n_gcm_buffers_supported(in, out, len_blocks)) {
     return 0;
   }
@@ -182,12 +200,9 @@ static size_t hw_gcm_decrypt(const uint8_t *in, uint8_t *out, size_t len,
   uint64_t *tag = (uint64_t *)Xi;
   const uint64_t *htable = (const uint64_t *)Htable;
   const uint64_t len_bits = len_blocks * 8;
-#if defined(S2N_BIGNUM_GCM_8X_ASM)
-  const int use_8x = CRYPTO_is_ARMv8_GCM_8x_capable() && len >= 256;
-#endif
   switch (key->rounds) {
     case 10:
-#if defined(S2N_BIGNUM_GCM_8X_ASM)
+#if defined(OPENSSL_WINDOWS) || defined(MY_ASSEMBLER_SUPPORTS_NEON_SHA3_EXTENSION)
       if (use_8x) {
         return aes128_gcm_dec_alt(in, len_bits, out, tag, ivec, s2n_key,
                                   htable);
@@ -195,7 +210,7 @@ static size_t hw_gcm_decrypt(const uint8_t *in, uint8_t *out, size_t len,
 #endif
       return aes128_gcm_dec(in, len_bits, out, tag, ivec, s2n_key, htable);
     case 14:
-#if defined(S2N_BIGNUM_GCM_8X_ASM)
+#if defined(OPENSSL_WINDOWS) || defined(MY_ASSEMBLER_SUPPORTS_NEON_SHA3_EXTENSION)
       if (use_8x) {
         return aes256_gcm_dec_alt(in, len_bits, out, tag, ivec, s2n_key,
                                   htable);
